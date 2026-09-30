@@ -1,0 +1,18 @@
+{
+  "listeners": [
+    {
+      "address": "127.0.0.1",
+      "port": 8080
+    }
+  ],
+
+  "db_clients": [
+    {
+      "name": "default",
+      "rdbms": "sqlite3",
+      "filename": "./data/traininghub.db",
+      "is_fast": false,
+      "connection_number": 1
+    }
+  ]
+}
