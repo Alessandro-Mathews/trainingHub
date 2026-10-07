@@ -5,8 +5,7 @@
 namespace traininghub::repositories
 {
 
-std::vector<models::Perfil>
-PerfilRepository::listar()
+std::vector<models::Perfil> PerfilRepository::listar()
 {
     std::vector<models::Perfil> perfis;
 
@@ -14,7 +13,7 @@ PerfilRepository::listar()
 
     auto resultado = dbClient->execSqlSync(
         "SELECT id, nome, descricao, ativo, criado_em "
-        "FROM perfis "
+        "FROM perfil "
         "ORDER BY id"
     );
 
@@ -43,6 +42,7 @@ PerfilRepository::listar()
     return perfis;
 }
 
+
 std::optional<models::Perfil>
 PerfilRepository::buscarPorId(std::int64_t id)
 {
@@ -50,7 +50,7 @@ PerfilRepository::buscarPorId(std::int64_t id)
 
     auto resultado = dbClient->execSqlSync(
         "SELECT id, nome, descricao, ativo, criado_em "
-        "FROM perfis "
+        "FROM perfil "
         "WHERE id = ?",
         id
     );
@@ -82,13 +82,14 @@ PerfilRepository::buscarPorId(std::int64_t id)
     return perfil;
 }
 
+
 std::int64_t PerfilRepository::criar(
     const models::Perfil& perfil)
 {
     auto dbClient = drogon::app().getDbClient();
 
     auto resultado = dbClient->execSqlSync(
-        "INSERT INTO perfis "
+        "INSERT INTO perfil "
         "(nome, descricao, ativo) "
         "VALUES (?, ?, ?)",
         perfil.nome,
@@ -99,6 +100,7 @@ std::int64_t PerfilRepository::criar(
     return resultado.insertId();
 }
 
+
 bool PerfilRepository::atualizar(
     std::int64_t id,
     const models::Perfil& perfil)
@@ -106,7 +108,7 @@ bool PerfilRepository::atualizar(
     auto dbClient = drogon::app().getDbClient();
 
     auto resultado = dbClient->execSqlSync(
-        "UPDATE perfis "
+        "UPDATE perfil "
         "SET nome = ?, descricao = ?, ativo = ? "
         "WHERE id = ?",
         perfil.nome,
@@ -118,13 +120,14 @@ bool PerfilRepository::atualizar(
     return resultado.affectedRows() > 0;
 }
 
+
 bool PerfilRepository::excluir(
     std::int64_t id)
 {
     auto dbClient = drogon::app().getDbClient();
 
     auto resultado = dbClient->execSqlSync(
-        "DELETE FROM perfis "
+        "DELETE FROM perfil "
         "WHERE id = ?",
         id
     );

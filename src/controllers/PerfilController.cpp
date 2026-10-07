@@ -109,9 +109,7 @@ void PerfilController::criar(
     if (!json)
     {
         Json::Value resposta;
-
-        resposta["erro"] =
-            "JSON inválido";
+        resposta["erro"] = "JSON inválido";
 
         auto response =
             drogon::HttpResponse::newHttpJsonResponse(resposta);
@@ -119,16 +117,13 @@ void PerfilController::criar(
         response->setStatusCode(drogon::k400BadRequest);
 
         callback(response);
-
         return;
     }
 
     if (!json->isMember("nome"))
     {
         Json::Value resposta;
-
-        resposta["erro"] =
-            "O campo nome é obrigatório";
+        resposta["erro"] = "O campo nome é obrigatório";
 
         auto response =
             drogon::HttpResponse::newHttpJsonResponse(resposta);
@@ -136,23 +131,21 @@ void PerfilController::criar(
         response->setStatusCode(drogon::k400BadRequest);
 
         callback(response);
-
         return;
     }
 
     models::Perfil perfil;
 
-    perfil.nome =
-        (*json)["nome"].asString();
+    perfil.nome = (*json)["nome"].asString();
 
-    perfil.ativo =
-        json->get("ativo", 1).asInt();
-
-    if (json->isMember("descricao") &&
-        !(*json)["descricao"].isNull())
+    if (json->isMember("descricao"))
     {
-        perfil.descricao =
-            (*json)["descricao"].asString();
+        perfil.descricao = (*json)["descricao"].asString();
+    }
+
+    if (json->isMember("ativo"))
+    {
+        perfil.ativo = (*json)["ativo"].asInt();
     }
 
     services::PerfilService service;
@@ -161,11 +154,8 @@ void PerfilController::criar(
 
     Json::Value resposta;
 
-    resposta["mensagem"] =
-        "Perfil criado com sucesso";
-
-    resposta["id"] =
-        static_cast<Json::Int64>(id);
+    resposta["mensagem"] = "Perfil criado com sucesso";
+    resposta["id"] = static_cast<Json::Int64>(id);
 
     auto response =
         drogon::HttpResponse::newHttpJsonResponse(resposta);

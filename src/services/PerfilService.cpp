@@ -22,7 +22,6 @@ PerfilService::buscarPorId(std::int64_t id)
     return repository.buscarPorId(id);
 }
 
-
 std::int64_t PerfilService::criar(
     const models::Perfil& perfil)
 {
