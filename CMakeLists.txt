@@ -12,11 +12,18 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(Drogon CONFIG REQUIRED)
 
 add_executable(traininghub
+
     src/main.cpp
+
     src/controllers/HealthController.cpp
     src/controllers/AcademiaController.cpp
+    src/controllers/PerfilController.cpp
+
     src/repositories/AcademiaRepository.cpp
+    src/repositories/PerfilRepository.cpp
+
     src/services/AcademiaService.cpp
+    src/services/PerfilService.cpp
 )
 
 target_include_directories(traininghub
