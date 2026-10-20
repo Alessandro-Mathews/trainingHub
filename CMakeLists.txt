@@ -10,20 +10,26 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(Drogon CONFIG REQUIRED)
+find_package(unofficial-argon2 CONFIG REQUIRED)
 
 add_executable(traininghub
-
     src/main.cpp
 
     src/controllers/HealthController.cpp
     src/controllers/AcademiaController.cpp
     src/controllers/PerfilController.cpp
+    src/controllers/AuthController.cpp
 
     src/repositories/AcademiaRepository.cpp
     src/repositories/PerfilRepository.cpp
+    src/repositories/UsuarioRepository.cpp
 
     src/services/AcademiaService.cpp
     src/services/PerfilService.cpp
+    src/services/AuthService.cpp
+
+    src/security/SessionManager.cpp
+    src/security/PasswordHasher.cpp
 )
 
 target_include_directories(traininghub
@@ -34,4 +40,5 @@ target_include_directories(traininghub
 target_link_libraries(traininghub
     PRIVATE
         Drogon::Drogon
+        unofficial::argon2::libargon2
 )
