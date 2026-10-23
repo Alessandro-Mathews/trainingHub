@@ -16,3 +16,14 @@ add_executable(security_tests
 target_compile_features(security_tests PRIVATE cxx_std_20)
 target_include_directories(security_tests PRIVATE ../include)
 target_link_libraries(security_tests PRIVATE Drogon::Drogon unofficial::argon2::libargon2)
+
+add_executable(sqlite_foreign_keys_tests
+    sqlite_foreign_keys_tests.cpp
+    ../src/database/SqliteConfig.cpp
+)
+target_include_directories(sqlite_foreign_keys_tests PRIVATE ../include)
+target_link_libraries(sqlite_foreign_keys_tests PRIVATE Drogon::Drogon SQLite3_lib)
+
+enable_testing()
+add_test(NAME security COMMAND security_tests)
+add_test(NAME sqlite_foreign_keys COMMAND sqlite_foreign_keys_tests)

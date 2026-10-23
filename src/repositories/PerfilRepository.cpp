@@ -1,138 +1,109 @@
 #include "traininghub/repositories/PerfilRepository.h"
 
-#include <drogon/drogon.h>
+#include <utility>
 
 namespace traininghub::repositories
 {
-
-std::vector<models::Perfil> PerfilRepository::listar()
+namespace
 {
-    std::vector<models::Perfil> perfis;
-
-    auto dbClient = drogon::app().getDbClient();
-
-    auto resultado = dbClient->execSqlSync(
-        "SELECT id, nome, descricao, ativo, criado_em "
-        "FROM perfil "
-        "ORDER BY id"
-    );
-
-    for (const auto& linha : resultado)
-    {
-        models::Perfil perfil;
-
-        perfil.id = linha["id"].as<std::int64_t>();
-        perfil.nome = linha["nome"].as<std::string>();
-
-        if (linha["descricao"].isNull())
-        {
-            perfil.descricao = std::nullopt;
-        }
-        else
-        {
-            perfil.descricao = linha["descricao"].as<std::string>();
-        }
-
-        perfil.ativo = linha["ativo"].as<int>();
-        perfil.criado_em = linha["criado_em"].as<std::string>();
-
-        perfis.push_back(perfil);
-    }
-
-    return perfis;
-}
-
-
-std::optional<models::Perfil>
-PerfilRepository::buscarPorId(std::int64_t id)
+models::Perfil fromRow(const drogon::orm::Row &row)
 {
-    auto dbClient = drogon::app().getDbClient();
-
-    auto resultado = dbClient->execSqlSync(
-        "SELECT id, nome, descricao, ativo, criado_em "
-        "FROM perfil "
-        "WHERE id = ?",
-        id
-    );
-
-    if (resultado.empty())
-    {
-        return std::nullopt;
-    }
-
-    const auto& linha = resultado.front();
-
     models::Perfil perfil;
-
-    perfil.id = linha["id"].as<std::int64_t>();
-    perfil.nome = linha["nome"].as<std::string>();
-
-    if (linha["descricao"].isNull())
-    {
-        perfil.descricao = std::nullopt;
-    }
-    else
-    {
-        perfil.descricao = linha["descricao"].as<std::string>();
-    }
-
-    perfil.ativo = linha["ativo"].as<int>();
-    perfil.criado_em = linha["criado_em"].as<std::string>();
-
+    perfil.id = row["id"].as<std::int64_t>();
+    perfil.nome = row["nome"].as<std::string>();
+    if (!row["descricao"].isNull())
+        perfil.descricao = row["descricao"].as<std::string>();
+    perfil.ativo = row["ativo"].as<int>();
+    perfil.criado_em = row["criado_em"].as<std::string>();
     return perfil;
 }
-
-
-std::int64_t PerfilRepository::criar(
-    const models::Perfil& perfil)
-{
-    auto dbClient = drogon::app().getDbClient();
-
-    auto resultado = dbClient->execSqlSync(
-        "INSERT INTO perfil "
-        "(nome, descricao, ativo) "
-        "VALUES (?, ?, ?)",
-        perfil.nome,
-        perfil.descricao.value_or(""),
-        perfil.ativo
-    );
-
-    return resultado.insertId();
 }
 
-
-bool PerfilRepository::atualizar(
-    std::int64_t id,
-    const models::Perfil& perfil)
+PerfilRepository::PerfilRepository(const drogon::orm::DbClientPtr &db)
+    : db_(db)
 {
-    auto dbClient = drogon::app().getDbClient();
-
-    auto resultado = dbClient->execSqlSync(
-        "UPDATE perfil "
-        "SET nome = ?, descricao = ?, ativo = ? "
-        "WHERE id = ?",
-        perfil.nome,
-        perfil.descricao.value_or(""),
-        perfil.ativo,
-        id
-    );
-
-    return resultado.affectedRows() > 0;
 }
 
-
-bool PerfilRepository::excluir(
-    std::int64_t id)
+void PerfilRepository::listar(ListCallback callback, ErrorCallback errorCallback) const
 {
-    auto dbClient = drogon::app().getDbClient();
+    db_->execSqlAsync(
+        "SELECT id, nome, descricao, ativo, criado_em FROM perfil ORDER BY id",
+        [callback = std::move(callback), errorCallback](const drogon::orm::Result &result)
+        {
+            std::vector<models::Perfil> perfis;
+            try
+            {
+                perfis.reserve(result.size());
+                for (const auto &row : result)
+                    perfis.push_back(fromRow(row));
+            }
+            catch (...)
+            {
+                errorCallback(drogon::orm::ConversionError("Failed to map Perfil database result"));
+                return;
+            }
+            callback(perfis);
+        },
+        errorCallback);
+}
 
-    auto resultado = dbClient->execSqlSync(
-        "DELETE FROM perfil "
-        "WHERE id = ?",
-        id
-    );
+void PerfilRepository::buscarPorId(std::int64_t id, FindCallback callback,
+                                  ErrorCallback errorCallback) const
+{
+    db_->execSqlAsync(
+        "SELECT id, nome, descricao, ativo, criado_em FROM perfil WHERE id = ?",
+        [callback = std::move(callback), errorCallback](const drogon::orm::Result &result)
+        {
+            std::optional<models::Perfil> perfil;
+            try
+            {
+                if (!result.empty())
+                    perfil = fromRow(result[0]);
+            }
+            catch (...)
+            {
+                errorCallback(drogon::orm::ConversionError("Failed to map Perfil database result"));
+                return;
+            }
+            callback(perfil);
+        },
+        errorCallback, id);
+}
 
-    return resultado.affectedRows() > 0;
+void PerfilRepository::criar(const models::Perfil &perfil, CreateCallback callback,
+                            ErrorCallback errorCallback) const
+{
+    db_->execSqlAsync(
+        "INSERT INTO perfil (nome, descricao, ativo) VALUES (?, ?, ?)",
+        [callback = std::move(callback)](const drogon::orm::Result &result)
+        {
+            callback(static_cast<std::int64_t>(result.insertId()));
+        },
+        std::move(errorCallback), perfil.nome, perfil.descricao, perfil.ativo);
+}
+
+void PerfilRepository::atualizar(std::int64_t id, const models::Perfil &perfil,
+                                ChangeCallback callback, ErrorCallback errorCallback) const
+{
+    db_->execSqlAsync(
+        "UPDATE perfil SET nome = ?, descricao = ?, ativo = ? WHERE id = ?",
+        [callback = std::move(callback)](const drogon::orm::Result &result)
+        {
+            callback(result.affectedRows() > 0);
+        },
+        std::move(errorCallback), perfil.nome, perfil.descricao, perfil.ativo, id);
+}
+
+void PerfilRepository::excluir(std::int64_t id, ChangeCallback callback,
+                              ErrorCallback errorCallback) const
+{
+    db_->execSqlAsync(
+        "DELETE FROM perfil WHERE id = ?",
+        [callback = std::move(callback)](const drogon::orm::Result &result)
+        {
+            callback(result.affectedRows() > 0);
+        },
+        std::move(errorCallback), id);
 }
 
 }

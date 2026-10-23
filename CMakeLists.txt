@@ -14,6 +14,7 @@ find_package(unofficial-argon2 CONFIG REQUIRED)
 
 add_executable(traininghub
     src/main.cpp
+    src/database/SqliteConfig.cpp
 
     src/controllers/HealthController.cpp
     src/controllers/AcademiaController.cpp
@@ -41,4 +42,5 @@ target_link_libraries(traininghub
     PRIVATE
         Drogon::Drogon
         unofficial::argon2::libargon2
+        SQLite3_lib
 )
