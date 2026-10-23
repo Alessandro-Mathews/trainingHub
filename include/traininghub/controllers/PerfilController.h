@@ -17,31 +17,31 @@ public:
 
     ADD_METHOD_TO(
         PerfilController::listar,
-        "/perfis",
+        "/api/perfis",
         drogon::Get
     );
 
     ADD_METHOD_TO(
         PerfilController::buscarPorId,
-        "/perfis/{id}",
+        "/api/perfis/{id}",
         drogon::Get
     );
 
     ADD_METHOD_TO(
         PerfilController::criar,
-        "/perfis",
+        "/api/perfis",
         drogon::Post
     );
 
     ADD_METHOD_TO(
         PerfilController::atualizar,
-        "/perfis/{id}",
+        "/api/perfis/{id}",
         drogon::Put
     );
 
     ADD_METHOD_TO(
         PerfilController::excluir,
-        "/perfis/{id}",
+        "/api/perfis/{id}",
         drogon::Delete
     );
 

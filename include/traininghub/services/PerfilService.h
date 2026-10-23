@@ -1,36 +1,42 @@
 #pragma once
 
-#include "traininghub/models/Perfil.h"
-
-#include <cstdint>
-#include <optional>
-#include <vector>
+#include "traininghub/repositories/PerfilRepository.h"
 
 namespace traininghub::services
 {
 
+enum class PerfilError
+{
+    InvalidInput,
+    NotFound,
+    DuplicateName,
+    InUse,
+    Database
+};
+
 class PerfilService
 {
 public:
+    using ErrorCallback = std::function<void(PerfilError)>;
+    using SuccessCallback = std::function<void()>;
+    using ListCallback = repositories::PerfilRepository::ListCallback;
+    using FindCallback = std::function<void(const models::Perfil &)>;
+    using CreateCallback = repositories::PerfilRepository::CreateCallback;
 
-    std::vector<models::Perfil> listar();
+    explicit PerfilService(repositories::PerfilRepository repository);
 
-    std::optional<models::Perfil> buscarPorId(
-        std::int64_t id
-    );
+    void listar(ListCallback callback, ErrorCallback errorCallback) const;
+    void buscarPorId(std::int64_t id, FindCallback callback,
+                     ErrorCallback errorCallback) const;
+    void criar(const models::Perfil &perfil, CreateCallback callback,
+               ErrorCallback errorCallback) const;
+    void atualizar(std::int64_t id, const models::Perfil &perfil,
+                   SuccessCallback callback, ErrorCallback errorCallback) const;
+    void excluir(std::int64_t id, SuccessCallback callback,
+                 ErrorCallback errorCallback) const;
 
-    std::int64_t criar(
-        const models::Perfil& perfil
-    );
-
-    bool atualizar(
-        std::int64_t id,
-        const models::Perfil& perfil
-    );
-
-    bool excluir(
-        std::int64_t id
-    );
+private:
+    repositories::PerfilRepository repository_;
 };
 
 }
