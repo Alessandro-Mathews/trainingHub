@@ -1,5 +1,6 @@
 {
   "app": {
+    "document_root": "./public",
     "enable_session": true,
     "session_timeout": 1800,
     "session_same_site": "Strict"

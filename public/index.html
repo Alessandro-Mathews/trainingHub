@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="TrainingHub — Sua evolução em um só lugar. Painel administrativo para gestão de academias.">
+  <title>Dashboard | TrainingHub</title>
+  <link rel="icon" href="/images/traininghub-logo.png" type="image/png">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <link rel="stylesheet" href="/css/style.css">
+  <script defer src="/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+  <script type="module" src="/js/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Pular para o conteúdo</a>
+  <aside class="sidebar offcanvas-lg offcanvas-start" tabindex="-1" id="sidebar" aria-labelledby="sidebar-title">
+    <div class="offcanvas-header">
+      <span class="eyebrow" id="sidebar-title">Navegação principal</span>
+      <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" data-bs-target="#sidebar" aria-label="Fechar menu"></button>
+    </div>
+    <div class="offcanvas-body">
+      <a class="brand" href="#dashboard" aria-label="TrainingHub — Dashboard">
+        <img id="brand-logo" src="/images/traininghub-logo.png" alt="Logo TrainingHub" width="48" height="48">
+        <span>TrainingHub<small>Sua evolução em um só lugar</small></span>
+      </a>
+      <nav aria-label="Principal">
+        <p class="nav-label">PRINCIPAL</p>
+        <a class="nav-item active" href="#dashboard" data-page="dashboard" aria-current="page"><span class="nav-symbol" aria-hidden="true">▦</span> Dashboard</a>
+        <a class="nav-item" href="#academias" data-page="academias"><span class="nav-symbol" aria-hidden="true">▤</span> Academias</a>
+        <p class="nav-label modules-label">ADMINISTRAÇÃO</p>
+        <span class="nav-item unavailable" aria-disabled="true"><span class="nav-symbol" aria-hidden="true">♙</span> Usuários <small>Em breve</small></span>
+        <span class="nav-item unavailable" aria-disabled="true"><span class="nav-symbol" aria-hidden="true">◇</span> Perfis <small>Em breve</small></span>
+      </nav>
+      <div class="sidebar-footer"><span class="footer-mark" aria-hidden="true"></span> Gestão que acompanha sua evolução.</div>
+    </div>
+  </aside>
+
+  <div class="workspace">
+    <header class="topbar">
+      <div class="topbar-context">
+        <button class="menu-toggle btn d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebar" aria-controls="sidebar" aria-label="Abrir menu"><span aria-hidden="true">☰</span></button>
+        <span class="context-brand">TrainingHub</span><span class="context-divider" aria-hidden="true">/</span><span id="page-context">Dashboard</span>
+      </div>
+      <span class="admin-context">Painel administrativo</span>
+    </header>
+
+    <main id="main-content" tabindex="-1">
+      <section id="dashboard" aria-labelledby="dashboard-title">
+        <div class="page-heading"><div><p class="eyebrow">VISÃO GERAL</p><h1 id="dashboard-title">Seu ponto de partida.</h1><p class="page-description">Acompanhe suas academias e o funcionamento do TrainingHub.</p></div><a class="btn btn-primary" href="#academias">Ver academias <span aria-hidden="true">↗</span></a></div>
+        <div class="row g-3 summary-grid">
+          <div class="col-md-4"><article class="panel summary-card"><div class="card-label"><span>Academias cadastradas</span><span class="card-symbol" aria-hidden="true">▤</span></div><p class="metric" id="academias-total" aria-live="polite">—</p><p id="academias-summary" class="card-note">Consultando academias…</p></article></div>
+          <div class="col-md-4"><article class="panel summary-card"><div class="card-label"><span>Sistema</span><span class="card-symbol" aria-hidden="true">◉</span></div><p class="status-value" id="system-status" aria-live="polite">Consultando…</p><p class="card-note">Disponibilidade da aplicação</p></article></div>
+          <div class="col-md-4"><article class="panel summary-card"><div class="card-label"><span>Banco de dados</span><span class="card-symbol" aria-hidden="true">▱</span></div><p class="status-value" id="database-status" aria-live="polite">Consultando…</p><p class="card-note">Conexão com os dados do sistema</p></article></div>
+        </div>
+        <div class="row g-3 dashboard-details">
+          <div class="col-xl-8"><article class="panel directory-panel"><div class="section-kicker"><span class="accent-line" aria-hidden="true"></span> GESTÃO DE ACADEMIAS</div><h2>Uma visão clara da sua operação.</h2><p>Consulte as academias cadastradas, seus contatos e a situação de cada unidade em um só lugar.</p><a class="text-link" href="#academias">Acessar listagem de academias <span aria-hidden="true">↗</span></a><div class="directory-footnote">Dados consultados diretamente no TrainingHub.</div></article></div>
+          <div class="col-xl-4"><article class="panel roadmap-panel"><p class="eyebrow">PRÓXIMOS MÓDULOS</p><h2>A base para evoluir.</h2><p>Novas áreas de gestão serão disponibilizadas nas próximas etapas.</p><div class="roadmap-row"><span>Usuários</span><span class="neutral-badge">Em breve</span></div><div class="roadmap-row"><span>Perfis</span><span class="neutral-badge">Em breve</span></div></article></div>
+        </div>
+      </section>
+
+      <section id="academias" aria-labelledby="academias-title" hidden>
+        <div class="page-heading"><div><p class="eyebrow">GESTÃO</p><h1 id="academias-title">Academias</h1><p class="page-description">Consulte as academias cadastradas no TrainingHub.</p></div><button class="btn btn-outline-secondary" id="refresh-academias" type="button">Atualizar listagem <span aria-hidden="true">↻</span></button></div>
+        <div class="panel academias-panel" id="academias-panel" aria-busy="true">
+          <div class="panel-heading"><h2>Academias cadastradas</h2><span id="academias-count" class="neutral-badge">Consultando</span></div>
+          <div id="academias-state" class="list-state" role="status" aria-live="polite"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span><p>Carregando academias...</p></div>
+          <div id="academias-error" class="list-state" role="alert" hidden><span class="state-symbol" aria-hidden="true">!</span><h3>Não foi possível carregar as academias.</h3><p>Verifique sua conexão e tente novamente.</p><button type="button" class="btn btn-primary" id="retry-academias">Tentar novamente</button></div>
+          <div id="academias-table-container" class="table-responsive" role="region" aria-label="Lista de academias" tabindex="0" hidden>
+            <table class="table align-middle mb-0"><caption class="visually-hidden">Academias cadastradas: identificação, contato e situação.</caption><thead><tr><th scope="col">ID</th><th scope="col">Academia</th><th scope="col">CNPJ</th><th scope="col">Contato</th><th scope="col">Status</th></tr></thead><tbody id="academias-rows"></tbody></table>
+          </div>
+          <div class="panel-footer">Consulta de academias · TrainingHub</div>
+        </div>
+      </section>
+      <footer class="content-footer"><span>TrainingHub</span><span>Sua evolução em um só lugar</span></footer>
+      <noscript><p class="alert alert-warning">Ative o JavaScript para navegar e consultar os dados do TrainingHub.</p></noscript>
+    </main>
+  </div>
+</body>
+</html>
