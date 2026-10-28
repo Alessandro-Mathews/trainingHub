@@ -20,6 +20,7 @@ add_executable(traininghub
     src/controllers/AcademiaController.cpp
     src/controllers/PerfilController.cpp
     src/controllers/AuthController.cpp
+    src/controllers/UsuarioController.cpp
 
     src/repositories/AcademiaRepository.cpp
     src/repositories/PerfilRepository.cpp
@@ -28,6 +29,7 @@ add_executable(traininghub
     src/services/AcademiaService.cpp
     src/services/PerfilService.cpp
     src/services/AuthService.cpp
+    src/services/UsuarioService.cpp
 
     src/security/SessionManager.cpp
     src/security/PasswordHasher.cpp

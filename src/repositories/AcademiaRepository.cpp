@@ -12,6 +12,38 @@ AcademiaRepository::AcademiaRepository(
 {
 }
 
+void AcademiaRepository::buscarPorId(
+    std::int64_t id, FindCallback callback, ErrorCallback errorCallback) const
+{
+    db_->execSqlAsync(
+        "SELECT id, nome, cnpj, email, telefone, ativo, criado_em FROM academia WHERE id = ?",
+        [callback = std::move(callback), errorCallback](const drogon::orm::Result &result)
+        {
+            std::optional<models::Academia> academia;
+            try
+            {
+                if (!result.empty())
+                {
+                    const auto &row = result[0];
+                    academia.emplace();
+                    academia->id = row["id"].as<std::int64_t>();
+                    academia->nome = row["nome"].as<std::string>();
+                    if (!row["cnpj"].isNull()) academia->cnpj = row["cnpj"].as<std::string>();
+                    if (!row["email"].isNull()) academia->email = row["email"].as<std::string>();
+                    if (!row["telefone"].isNull()) academia->telefone = row["telefone"].as<std::string>();
+                    academia->ativo = row["ativo"].as<int>() != 0;
+                    academia->criado_em = row["criado_em"].as<std::string>();
+                }
+            }
+            catch (...)
+            {
+                errorCallback(drogon::orm::ConversionError("Failed to map Academia database result"));
+                return;
+            }
+            callback(academia);
+        }, errorCallback, id);
+}
+
 void AcademiaRepository::findAll(
     FindAllCallback callback,
     ErrorCallback errorCallback
