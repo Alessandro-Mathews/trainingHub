@@ -1,0 +1,100 @@
+name: TrainingHub CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VCPKG_DEFAULT_TRIPLET: x64-mingw-dynamic
+  VCPKG_DEFAULT_HOST_TRIPLET: x64-mingw-dynamic
+  VCPKG_BINARY_SOURCES: clear
+  VCPKG_DISABLE_METRICS: '1'
+  PYTHONUTF8: '1'
+
+jobs:
+  build-and-test:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Checkout TrainingHub
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up MSYS2 UCRT64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          path-type: minimal
+          cache: false
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-python
+
+      - name: Checkout audited vcpkg
+        uses: actions/checkout@v6
+        with:
+          repository: microsoft/vcpkg
+          ref: e456309491fd875487bf02b8a0dca76c1b1b00cc
+          path: build/vcpkg
+          persist-credentials: false
+
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: |
+          & "$env:GITHUB_WORKSPACE/build/vcpkg/bootstrap-vcpkg.bat" -disableMetrics
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Configure application and C++ tests
+        run: |
+          set -euo pipefail
+          workspace="$(cygpath -m "$GITHUB_WORKSPACE")"
+          test "$MSYSTEM" = UCRT64
+          python -c "import sqlite3; print('Python SQLite:', sqlite3.sqlite_version)"
+          options=(
+            -G Ninja
+            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_C_COMPILER=gcc
+            -DCMAKE_CXX_COMPILER=g++
+            "-DCMAKE_TOOLCHAIN_FILE=$workspace/build/vcpkg/scripts/buildsystems/vcpkg.cmake"
+            -DVCPKG_TARGET_TRIPLET=x64-mingw-dynamic
+            -DVCPKG_HOST_TRIPLET=x64-mingw-dynamic
+            "-DVCPKG_MANIFEST_DIR=$workspace"
+            "-DVCPKG_INSTALLED_DIR=$workspace/build/vcpkg_installed"
+          )
+          cmake -S . -B build "${options[@]}"
+          cmake -S tests -B build/security-tests "${options[@]}"
+
+      - name: Build application
+        run: |
+          set -euo pipefail
+          cmake --build build --parallel 2
+
+      - name: Build C++ tests
+        run: |
+          set -euo pipefail
+          cmake --build build/security-tests --parallel 2
+
+      - name: Run CTest and isolated HTTP regressions
+        run: |
+          set -euo pipefail
+          installed="$PWD/build/vcpkg_installed/x64-mingw-dynamic"
+          export PATH="$installed/bin:$installed/tools/openssl:$PWD/build:$PATH"
+          ctest --test-dir build/security-tests --output-on-failure --no-tests=error
+          python tests/interface_web.py
+          python tests/usuario_integration.py
+          python tests/perfil_integration.py
+          python tests/auth_integration.py
