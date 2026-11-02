@@ -43,7 +43,7 @@ def run():
             db.executescript((ROOT / "migrations" / "001_initial_schema.sql").read_text())
             db.executemany("INSERT INTO academia (id, nome) VALUES (?, ?)",
                            [(1, "A"), (2, "B")])
-            db.execute("INSERT INTO perfil (id, nome) VALUES (1, 'Teste')")
+            db.execute("INSERT INTO perfil (id, nome) VALUES (1, 'Aluno')")
             db.executemany(
                 "INSERT INTO usuario (id, academia_id, perfil_id, nome, email, senha_hash, ativo) "
                 "VALUES (?, ?, 1, 'Teste', ?, ?, ?)",
@@ -103,7 +103,7 @@ def run():
                     raise RuntimeError("Test server did not start")
 
                 request("GET", "/api/health/database")
-                request("GET", "/api/academias")
+                request("GET", "/api/academias", expected=401)
                 request("GET", "/api/auth/me", expected=401)
                 for body in [None, b"{", [], {},
                              {"academia_id": 1, "email": "a"},
@@ -135,6 +135,7 @@ def run():
                 cookie = headers.get("Set-Cookie", "")
                 assert "HttpOnly" in cookie and "SameSite=Strict" in cookie
                 assert request("GET", "/api/auth/me")[0] == context
+                request("GET", "/api/academias", expected=403)
                 anonymous = urllib.request.build_opener()
                 request("GET", "/api/auth/me", expected=401, opener=anonymous)
 
@@ -151,13 +152,46 @@ def run():
                 request("POST", "/api/auth/logout")
                 request("GET", "/api/auth/me", expected=401)
 
+                # Mutations happen only in this isolated fixture database. Revalidate
+                # existing sessions, and reject a new login while a parent is invalid.
+                invalidations = [
+                    ("UPDATE perfil SET ativo=0 WHERE id=1",
+                     "UPDATE perfil SET ativo=1 WHERE id=1", 403),
+                    ("DELETE FROM perfil WHERE id=1",
+                     "INSERT INTO perfil (id, nome) VALUES (1, 'Aluno')", 403),
+                    ("UPDATE academia SET ativo=0 WHERE id=1",
+                     "UPDATE academia SET ativo=1 WHERE id=1", 401),
+                    ("DELETE FROM academia WHERE id=1",
+                     "INSERT INTO academia (id, nome) VALUES (1, 'A')", 401),
+                    (f"UPDATE usuario SET ativo=0 WHERE id={2**40}",
+                     f"UPDATE usuario SET ativo=1 WHERE id={2**40}", 401),
+                ]
+                for invalidate, restore, status in invalidations:
+                    request("POST", "/api/auth/login", credentials)
+                    with closing(sqlite3.connect(database)) as db:
+                        db.execute(invalidate)
+                        db.commit()
+                    try:
+                        request("GET", "/api/auth/me", expected=status)
+                        # Logout must remain usable after all invalidation types.
+                        request("POST", "/api/auth/logout")
+                        request("POST", "/api/auth/logout")
+                        request("GET", "/api/auth/me", expected=401)
+                        request("POST", "/api/auth/login", credentials, expected=401)
+                        request("GET", "/api/auth/me", expected=401)
+                    finally:
+                        with closing(sqlite3.connect(database)) as db:
+                            db.execute(restore)
+                            db.commit()
+
                 with closing(sqlite3.connect(database)) as db:
                     db.execute("DROP TABLE usuario")
                     db.commit()
                 request("POST", "/api/auth/login", credentials, expected=500)
                 print("HTTP tests passed: validation, tenant isolation, inactive/missing users, "
                       "wrong/malformed hashes, SQL injection, login/me/logout, cookie rotation, "
-                      "64-bit IDs, safe responses, DB failure and existing endpoints.")
+                      "64-bit IDs, safe responses, parent/user revalidation, denied roles, "
+                      "DB failure and existing endpoints.")
             finally:
                 server.terminate()
                 try:

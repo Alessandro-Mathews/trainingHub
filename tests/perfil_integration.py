@@ -1,5 +1,6 @@
 """TH-20 HTTP regression tests. All writes use an isolated temporary database."""
 
+from auth_fixture import insert_admin, login_client
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 import hashlib
@@ -43,6 +44,7 @@ def run():
                     "INSERT INTO usuario (academia_id, perfil_id, nome, email, senha_hash) "
                     "VALUES (1, ?, 'Teste', 'perfil@example.test', ?)", (2**40, encoded)
                 )
+                insert_admin(db, encoded)
                 db.commit()
 
             with socket.socket() as sock:
@@ -55,6 +57,8 @@ def run():
             (directory / "config.json").write_text(json.dumps(config), encoding="utf-8")
             base = f"http://127.0.0.1:{port}"
 
+            admin = None
+
             def request(method, path, body=None, expected=200, opener=None):
                 nonlocal checked
                 data = body if isinstance(body, bytes) else (
@@ -62,7 +66,7 @@ def run():
                 )
                 req = urllib.request.Request(base + path, data=data, method=method,
                                              headers={"Content-Type": "application/json"})
-                client = opener or urllib.request.build_opener()
+                client = opener or admin or urllib.request.build_opener()
                 try:
                     response = client.open(req, timeout=10)
                 except urllib.error.HTTPError as error:
@@ -94,26 +98,27 @@ def run():
                     else:
                         raise RuntimeError("Isolated server did not start")
 
+                    admin = login_client(base)
                     request("GET", "/api/health/database")
                     request("GET", "/api/academias")
                     request("GET", "/perfis", expected=404)
                     request("GET", "/perfis/1", expected=404)
                     initial = request("GET", "/api/perfis")
-                    assert len(initial) == 1 and initial[0]["id"] == 2**40
-                    created = request("POST", "/api/perfis", {"nome": "Aluno"}, expected=201)
+                    assert [p["id"] for p in initial] == [90, 2**40]
+                    created = request("POST", "/api/perfis", {"nome": "Estudante"}, expected=201)
                     perfil_id = created["id"]
                     path = f"/api/perfis/{perfil_id}"
                     current = request("GET", path)
-                    assert current["nome"] == "Aluno" and current["descricao"] is None
+                    assert current["nome"] == "Estudante" and current["descricao"] is None
                     assert current["ativo"] == 1 and current["criado_em"]
-                    assert [p["id"] for p in request("GET", "/api/perfis")] == [2**40, perfil_id]
+                    assert [p["id"] for p in request("GET", "/api/perfis")] == [90, 2**40, perfil_id]
                     assert request("GET", "/api/perfis/999999", expected=404) == {
                         "erro": "Perfil não encontrado"
                     }
                     request("GET", "/api/perfis/0", expected=400)
                     request("DELETE", "/api/perfis/0", expected=400)
                     request("PUT", "/api/perfis/0",
-                            {"nome": "Aluno", "ativo": 1, "descricao": None}, expected=400)
+                            {"nome": "Estudante", "ativo": 1, "descricao": None}, expected=400)
 
                     invalid = [None, b"{", b"null", [], 1, "text", {}, {"nome": None},
                                {"nome": ""}, {"nome": " \t\n\r"}, {"nome": 5},
@@ -130,13 +135,13 @@ def run():
                                        if isinstance(body, dict) else body)
                         request("PUT", path, update_body, expected=400)
 
-                    request("POST", "/api/perfis", {"nome": "Aluno"}, expected=409)
+                    request("POST", "/api/perfis", {"nome": "Estudante"}, expected=409)
                     # SQLite's existing case-sensitive uniqueness remains unchanged.
-                    case_id = request("POST", "/api/perfis", {"nome": "aluno"}, expected=201)["id"]
+                    case_id = request("POST", "/api/perfis", {"nome": "estudante"}, expected=201)["id"]
                     request("PUT", f"/api/perfis/{case_id}",
-                            {"nome": "Aluno", "ativo": 1, "descricao": None}, expected=409)
+                            {"nome": "Estudante", "ativo": 1, "descricao": None}, expected=409)
 
-                    full = {"nome": "Aluno atualizado", "ativo": 0, "descricao": "Descrição"}
+                    full = {"nome": "Estudante atualizado", "ativo": 0, "descricao": "Descrição"}
                     request("PUT", path, full)
                     current = request("GET", path)
                     assert all(current[key] == value for key, value in full.items())
@@ -173,7 +178,7 @@ def run():
                                                      data=b'{"nome":"Concorrente"}',
                                                      headers={"Content-Type": "application/json"})
                         try:
-                            with urllib.request.urlopen(req, timeout=10) as response:
+                            with admin.open(req, timeout=10) as response:
                                 return response.code
                         except urllib.error.HTTPError as error:
                             with error:
@@ -204,7 +209,7 @@ def run():
                                       {"academia_id": 1, "email": "perfil@example.test",
                                        "senha": "TH24-test-password"}, opener=auth)
                     assert context == {"userId": 1, "academiaId": 1, "perfilId": 2**40}
-                    assert request("GET", "/api/auth/me", opener=auth) == context
+                    request("GET", "/api/auth/me", expected=403, opener=auth)
                     request("POST", "/api/auth/logout", opener=auth)
                     request("GET", "/api/auth/me", expected=401, opener=auth)
 

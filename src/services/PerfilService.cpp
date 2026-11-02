@@ -1,4 +1,5 @@
 #include "traininghub/services/PerfilService.h"
+#include "traininghub/security/Role.h"
 
 #include <drogon/drogon.h>
 #include <utility>
@@ -67,6 +68,11 @@ void PerfilService::criar(const models::Perfil &perfil, CreateCallback callback,
         errorCallback(PerfilError::InvalidInput);
         return;
     }
+    if (security::roleFromName(perfil.nome) != security::Role::UNKNOWN)
+    {
+        errorCallback(PerfilError::Protected);
+        return;
+    }
     repository_.criar(perfil, std::move(callback), databaseError(std::move(errorCallback)));
 }
 
@@ -78,13 +84,25 @@ void PerfilService::atualizar(std::int64_t id, const models::Perfil &perfil,
         errorCallback(PerfilError::InvalidInput);
         return;
     }
-    repository_.atualizar(id, perfil,
-        [callback, errorCallback](bool changed)
+    repository_.buscarPorId(id,
+        [id, perfil, callback, errorCallback, repository = repository_](const std::optional<models::Perfil> &current)
         {
-            if (!changed)
-                errorCallback(PerfilError::NotFound);
-            else
-                callback();
+            if (!current) { errorCallback(PerfilError::NotFound); return; }
+            const bool canonical = security::roleFromName(current->nome) != security::Role::UNKNOWN;
+            if ((canonical && (perfil.nome != current->nome || perfil.ativo != 1))
+                || (!canonical && security::roleFromName(perfil.nome) != security::Role::UNKNOWN))
+            {
+                errorCallback(PerfilError::Protected);
+                return;
+            }
+            repository.atualizar(id, perfil,
+                [callback, errorCallback](bool changed)
+                {
+                    if (!changed)
+                        errorCallback(PerfilError::NotFound);
+                    else
+                        callback();
+                }, databaseError(errorCallback));
         }, databaseError(errorCallback));
 }
 
@@ -97,13 +115,23 @@ void PerfilService::excluir(std::int64_t id, SuccessCallback callback,
         return;
     }
     // The FK is the final guard, including concurrent Usuario inserts.
-    repository_.excluir(id,
-        [callback, errorCallback](bool changed)
+    repository_.buscarPorId(id,
+        [id, callback, errorCallback, repository = repository_](const std::optional<models::Perfil> &current)
         {
-            if (!changed)
-                errorCallback(PerfilError::NotFound);
-            else
-                callback();
+            if (!current) { errorCallback(PerfilError::NotFound); return; }
+            if (security::roleFromName(current->nome) != security::Role::UNKNOWN)
+            {
+                errorCallback(PerfilError::Protected);
+                return;
+            }
+            repository.excluir(id,
+                [callback, errorCallback](bool changed)
+                {
+                    if (!changed)
+                        errorCallback(PerfilError::NotFound);
+                    else
+                        callback();
+                }, databaseError(errorCallback));
         }, databaseError(errorCallback));
 }
 

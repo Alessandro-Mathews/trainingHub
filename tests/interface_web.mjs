@@ -78,21 +78,24 @@ try {
   await call('Page.enable');
   await call('Runtime.enable');
   await call('Network.enable');
+  assert(process.env.TH21_SESSION_ID, 'Authenticated fixture session required');
+  const sessionCookie = await call('Network.setCookie', { name: 'JSESSIONID', value: process.env.TH21_SESSION_ID,
+    url: base, path: '/', httpOnly: true, sameSite: 'Strict' });
+  assert.equal(sessionCookie.success, true);
   on('Runtime.exceptionThrown', (event) => errors.push(event.exceptionDetails));
   on('Network.requestWillBeSent', (event) => requests.push(event.request.url));
   await viewport(1440);
   await call('Page.navigate', { url: base });
-  await until(`document.querySelector('#academias-total')?.textContent === '2' && document.querySelector('#database-status')?.textContent === 'Conectado'`);
+  await until(`document.querySelector('#academias-total')?.textContent === '1' && document.querySelector('#database-status')?.textContent === 'Conectado'`);
   assert.equal(await evaluate(`document.querySelector('#system-status').textContent`), 'Operacional');
   assert.equal(await evaluate(`document.querySelector('#brand-logo').naturalWidth > 0`), true);
   await screenshot('dashboard-1440');
   await click('[data-page="academias"]');
   await until(`!document.querySelector('#academias').hidden`);
   assert.equal(await evaluate(`document.title`), 'Academias | TrainingHub');
-  assert.equal(await evaluate(`document.querySelectorAll('#academias-rows tr').length`), 2);
+  assert.equal(await evaluate(`document.querySelectorAll('#academias-rows tr').length`), 1);
   assert.match(await evaluate(`document.querySelector('#academias-rows').textContent`), /Academia Centro/);
-  assert.match(await evaluate(`document.querySelector('#academias-rows').textContent`), /Não informado/);
-  assert.match(await evaluate(`document.querySelector('#academias-rows').textContent`), /Inativa/);
+  assert.equal(await evaluate(`document.querySelector('#academias-rows').textContent.includes('Studio Evolução')`), false);
   assert.equal(await evaluate(`document.activeElement.id`), 'main-content');
 
   for (const width of [1440, 1024, 768, 375]) {
@@ -130,10 +133,13 @@ try {
       if (mode === 'loading') { heldRequest = requestId; return; }
       if (mode === 'real') { await call('Fetch.continueRequest', { requestId }); return; }
       if (mode === 'network') { await call('Fetch.failRequest', { requestId, errorReason: 'ConnectionFailed' }); return; }
-      const body = mode === 'empty' ? [] : mode === 'invalid' ? { data: [] } : mode === 'xss' ?
+      const body = mode === 'empty' ? [] : mode === 'invalid' ? { data: [] } : mode === 'nullable-inactive' ?
+        [{ id: 1, nome: 'Academia Centro', ativo: true, cnpj: '12345678000190', email: 'centro@example.test', telefone: '(11) 99999-0000' },
+         { id: 2, nome: 'Studio Evolução', ativo: false, cnpj: null, email: null, telefone: null }] : mode === 'xss' ?
         [{ id: 9, nome: '<img src=x onerror="window.injected=true">', ativo: true, cnpj: null, email: null, telefone: null }] :
         { message: 'SQL internal detail must not appear' };
-      await call('Fetch.fulfillRequest', { requestId, responseCode: mode === 'error' ? 500 : 200,
+      const status = mode === 'error' ? 500 : mode === 'unauthenticated' ? 401 : mode === 'forbidden' ? 403 : 200;
+      await call('Fetch.fulfillRequest', { requestId, responseCode: status,
         responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
         body: Buffer.from(JSON.stringify(body)).toString('base64') });
     } catch (error) { interceptionErrors.push(error); }
@@ -152,7 +158,7 @@ try {
   await until(`document.querySelector('#academias-total').textContent === '0'`);
   assert.match(await evaluate(`document.querySelector('#academias-state').textContent`), /Nenhuma academia cadastrada/);
   await screenshot('empty-375');
-  for (mode of ['error', 'network', 'invalid']) {
+  for (mode of ['error', 'unauthenticated', 'forbidden', 'network', 'invalid']) {
     await click('#refresh-academias');
     await until(`!document.querySelector('#academias-error').hidden && document.querySelector('#academias-panel').getAttribute('aria-busy') === 'false'`);
     assert.equal(await evaluate(`document.querySelector('#academias-total').textContent`), '—');
@@ -161,7 +167,15 @@ try {
   await screenshot('error-375');
   mode = 'real';
   await click('#retry-academias');
+  await until(`document.querySelector('#academias-total').textContent === '1'`);
+  // Preserve legacy NULL/inactive rendering coverage with browser-only data;
+  // the authenticated API must never expose another Academia to this tenant.
+  mode = 'nullable-inactive';
+  await click('#refresh-academias');
   await until(`document.querySelector('#academias-total').textContent === '2'`);
+  assert.equal(await evaluate(`document.querySelectorAll('#academias-rows tr').length`), 2);
+  assert.match(await evaluate(`document.querySelector('#academias-rows').textContent`), /Não informado/);
+  assert.match(await evaluate(`document.querySelector('#academias-rows').textContent`), /Inativa/);
   mode = 'xss';
   await click('#refresh-academias');
   await until(`document.querySelector('#academias-total').textContent === '1'`);

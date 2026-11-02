@@ -37,7 +37,8 @@ void HealthController::databaseHealth(
             Json::Value response;
             response["status"] = "error";
             response["database"] = "disconnected";
-            response["message"] = error.base().what();
+            LOG_ERROR << "Falha ao verificar conexao com o banco: " << error.base().what();
+            response["message"] = "Erro interno ao verificar banco.";
 
             auto httpResponse =
                 drogon::HttpResponse::newHttpJsonResponse(response);

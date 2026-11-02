@@ -3,13 +3,14 @@
 #include "traininghub/repositories/UsuarioRepository.h"
 #include "traininghub/repositories/AcademiaRepository.h"
 #include "traininghub/repositories/PerfilRepository.h"
+#include "traininghub/security/ValidatedAuthContext.h"
 
 namespace traininghub::services
 {
 enum class UsuarioError
 {
     InvalidInput, NotFound, AcademiaNotFound, AcademiaInactive,
-    PerfilNotFound, PerfilInactive, DuplicateEmail, RelationshipConflict, Internal
+    PerfilNotFound, PerfilInactive, DuplicateEmail, RelationshipConflict, Forbidden, Internal
 };
 
 struct NovoUsuario
@@ -31,7 +32,8 @@ public:
     UsuarioService(repositories::UsuarioRepository usuarios,
                    repositories::AcademiaRepository academias,
                    repositories::PerfilRepository perfis);
-    void criar(const NovoUsuario &input, FindCallback callback, ErrorCallback errorCallback) const;
+    void criar(const security::ValidatedAuthContext &actor, const NovoUsuario &input,
+               FindCallback callback, ErrorCallback errorCallback) const;
     void buscarPorId(std::int64_t academiaId, std::int64_t id,
                      FindCallback callback, ErrorCallback errorCallback) const;
     void listarPorAcademia(std::int64_t academiaId, ListCallback callback,

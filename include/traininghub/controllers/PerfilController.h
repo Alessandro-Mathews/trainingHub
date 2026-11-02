@@ -18,31 +18,36 @@ public:
     ADD_METHOD_TO(
         PerfilController::listar,
         "/api/perfis",
-        drogon::Get
+        drogon::Get,
+        "traininghub::security::AuthenticationFilter"
     );
 
     ADD_METHOD_TO(
         PerfilController::buscarPorId,
         "/api/perfis/{id}",
-        drogon::Get
+        drogon::Get,
+        "traininghub::security::AuthenticationFilter"
     );
 
     ADD_METHOD_TO(
         PerfilController::criar,
         "/api/perfis",
-        drogon::Post
+        drogon::Post,
+        "traininghub::security::AuthenticationFilter"
     );
 
     ADD_METHOD_TO(
         PerfilController::atualizar,
         "/api/perfis/{id}",
-        drogon::Put
+        drogon::Put,
+        "traininghub::security::AuthenticationFilter"
     );
 
     ADD_METHOD_TO(
         PerfilController::excluir,
         "/api/perfis/{id}",
-        drogon::Delete
+        drogon::Delete,
+        "traininghub::security::AuthenticationFilter"
     );
 
     METHOD_LIST_END

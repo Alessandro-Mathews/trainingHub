@@ -98,3 +98,4 @@ jobs:
           python tests/usuario_integration.py
           python tests/perfil_integration.py
           python tests/auth_integration.py
+          python tests/authorization_integration.py

@@ -1,5 +1,6 @@
 """TH-19 HTTP checks against a temporary database and isolated server."""
 
+from auth_fixture import insert_admin, login_client
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 import hashlib
@@ -28,6 +29,7 @@ def run():
     checked = 0
     password = "TH19-test-password"
     hashes = []
+    encoded_admin = subprocess.check_output([str(ROOT / "build/security-tests/security_tests.exe"), "--fixture-hash"], text=True, env=env).strip()
     large_id = 2**40
     public_fields = {"id", "academia_id", "perfil_id", "nome", "email", "ativo", "criado_em"}
 
@@ -41,10 +43,14 @@ def run():
                                [(1, "A", 1), (2, "B", 1), (3, "Inativa", 0),
                                 (4, "Vazia", 1), (large_id, "Grande", 1)])
                 db.executemany("INSERT INTO perfil (id, nome, ativo) VALUES (?, ?, ?)",
-                               [(1, "Aluno", 1), (2, "Inativo", 0), (5, "Corrida FK", 1),
-                                (large_id, "Grande", 1)])
-                # Force generated user IDs beyond 32 bits without adding a fixture user.
-                db.execute("INSERT INTO sqlite_sequence (name, seq) VALUES ('usuario', ?)", (large_id,))
+                               [(1, "Aluno", 1), (2, "Inativo", 0), (5, "Instrutor", 1),
+                                (large_id, "Gestor", 1)])
+                insert_admin(db, encoded_admin)
+                insert_admin(db, encoded_admin, 2, 101)
+                insert_admin(db, encoded_admin, large_id, 102)
+                insert_admin(db, encoded_admin, 4, 103)
+                # Generated user IDs remain beyond 32 bits, independently of actor IDs.
+                db.execute("UPDATE sqlite_sequence SET seq=? WHERE name='usuario'", (large_id,))
                 db.commit()
 
             with socket.socket() as sock:
@@ -59,6 +65,8 @@ def run():
             jar = http.cookiejar.CookieJar()
             auth = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
 
+            admin = None
+
             def request(method, path, body=None, expected=200, opener=None,
                         content_type="application/json"):
                 nonlocal checked
@@ -68,7 +76,7 @@ def run():
                 req = urllib.request.Request(base + path, data=data, method=method,
                                              headers={"Content-Type": content_type})
                 try:
-                    response = (opener or urllib.request.build_opener()).open(req, timeout=20)
+                    response = (opener or admin or urllib.request.build_opener()).open(req, timeout=20)
                 except urllib.error.HTTPError as error:
                     response = error
                 with response:
@@ -104,12 +112,19 @@ def run():
                     else:
                         raise RuntimeError("Isolated server did not start")
 
+                    admin = login_client(base)
+                    admin_b = login_client(base, 2)
+                    admin_large = login_client(base, large_id)
+                    admin_empty = login_client(base, 4)
+                    actor_a = request("GET", "/api/usuarios/100?academia_id=1")
+                    actor_b = request("GET", "/api/usuarios/101?academia_id=2", opener=admin_b)
+                    actor_large = request("GET", f"/api/usuarios/102?academia_id={large_id}", opener=admin_large)
                     request("GET", "/api/health/database")
                     request("GET", "/api/academias")
                     request("GET", "/api/perfis")
-                    assert request("GET", "/api/usuarios?academia_id=4") == []
-                    assert request("GET", "/api/usuarios?academia_id=999") == []
-                    saved = create(opener=auth)
+                    request("GET", "/api/usuarios?academia_id=4", expected=403)
+                    request("GET", "/api/usuarios?academia_id=999", expected=403)
+                    saved = create()
                     assert set(saved) == public_fields
                     user_id = saved["id"]
                     assert user_id > 2**32 and saved["ativo"] is True and saved["criado_em"]
@@ -130,8 +145,8 @@ def run():
 
                     path = f"/api/usuarios/{user_id}"
                     assert request("GET", path + "?academia_id=1") == saved
-                    assert request("GET", "/api/usuarios?academia_id=1") == [saved]
-                    request("GET", path + "?academia_id=2", expected=404)
+                    assert request("GET", "/api/usuarios?academia_id=1") == [actor_a, saved]
+                    request("GET", path + "?academia_id=2", expected=403)
                     request("GET", "/api/usuarios/999?academia_id=1", expected=404)
                     for suffix in ["", "?academia_id=", "?academia_id=0", "?academia_id=-1",
                                    "?academia_id=1.0", "?academia_id=true", "?academia_id=1x",
@@ -160,15 +175,15 @@ def run():
                         create({"email": value}, expected=400)
                     create({"senha": ""}, expected=400)
                     create({"senha_hash": "precomputed"}, expected=400)
-                    create({"academia_id": 999}, expected=404)
+                    create({"academia_id": 999}, expected=403)
                     create({"perfil_id": 999}, expected=404)
-                    create({"academia_id": 3}, expected=400)
+                    create({"academia_id": 3}, expected=403)
                     create({"perfil_id": 2}, expected=400)
 
                     create(expected=409)
-                    other = create({"academia_id": 2})
+                    other = create({"academia_id": 2}, opener=admin_b)
                     assert other["academia_id"] == 2
-                    assert request("GET", "/api/usuarios?academia_id=2") == [other]
+                    assert request("GET", "/api/usuarios?academia_id=2", opener=admin_b) == [actor_b, other]
                     # GET scope comes exclusively from the query, never form data.
                     form = "application/x-www-form-urlencoded"
                     for read_path in ["/api/usuarios", path]:
@@ -176,30 +191,30 @@ def run():
                         request("GET", read_path + "?academia_id=9223372036854775808",
                                 b"academia_id=1", expected=400, content_type=form)
                     request("GET", path + "?academia_id=2", b"academia_id=1",
-                            expected=404, content_type=form)
+                            expected=403, content_type=form)
                     assert request("GET", "/api/usuarios?academia_id=2", b"academia_id=1",
-                                   content_type=form) == [other]
+                                   content_type=form, opener=admin_b) == [actor_b, other]
                     assert request("GET", path + "?academia_id=1", b"academia_id=2",
                                    content_type=form) == saved
                     assert request("GET", "/api/usuarios?academia_id=1", b"academia_id=2",
-                                   content_type=form) == [saved]
-                    assert request("GET", "/api/usuarios?other=value&acad%65mia_id=%32") == [other]
+                                   content_type=form) == [actor_a, saved]
+                    assert request("GET", "/api/usuarios?other=value&acad%65mia_id=%32", opener=admin_b) == [actor_b, other]
                     assert request("GET", path + "?other=value&acad%65mia_id=%31") == saved
                     case = create({"email": "Joao@example.test"})
                     assert case["email"] == "Joao@example.test"
                     # No arbitrary password complexity rule; even a single space is nonempty.
                     create({"email": "short@example.test", "senha": " "})
-                    large = create({"academia_id": large_id, "perfil_id": large_id})
+                    large = create({"academia_id": large_id, "perfil_id": large_id}, opener=admin_large)
                     assert large["academia_id"] == large_id and large["perfil_id"] == large_id
-                    assert request("GET", f"/api/usuarios/{large['id']}?academia_id={large_id}") == large
-                    assert request("GET", f"/api/usuarios?academia_id={large_id}") == [large]
+                    assert request("GET", f"/api/usuarios/{large['id']}?academia_id={large_id}", opener=admin_large) == large
+                    assert request("GET", f"/api/usuarios?academia_id={large_id}", opener=admin_large) == [actor_large, large]
 
                     def concurrent_create(_):
                         req = urllib.request.Request(base + "/api/usuarios", method="POST",
                                                      data=json.dumps(valid | {"email": "race@example.test"}).encode(),
                                                      headers={"Content-Type": "application/json"})
                         try:
-                            response = urllib.request.urlopen(req, timeout=30)
+                            response = admin.open(req, timeout=30)
                         except urllib.error.HTTPError as error:
                             response = error
                         with response:
@@ -242,7 +257,7 @@ def run():
                         db.execute("UPDATE usuario SET ativo=1 WHERE id=?", (user_id,))
                         db.execute("UPDATE academia SET ativo='invalid' WHERE id=4")
                         db.commit()
-                    create({"academia_id": 4}, expected=500)
+                    create({"academia_id": 4}, expected=500, opener=admin_empty)
                     with closing(sqlite3.connect(database)) as db:
                         db.execute("UPDATE academia SET ativo=1 WHERE id=4")
                         db.execute("UPDATE perfil SET ativo='invalid' WHERE id=5")

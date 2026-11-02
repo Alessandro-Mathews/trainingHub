@@ -1,5 +1,6 @@
 #include "traininghub/controllers/UsuarioController.h"
 #include "traininghub/services/UsuarioService.h"
+#include "traininghub/security/AuthorizationGuard.h"
 
 #include <drogon/drogon.h>
 #include <charconv>
@@ -53,6 +54,8 @@ services::UsuarioService::ErrorCallback onError(HttpCallback callback)
             callback(message(drogon::k409Conflict, "Academia ou perfil indisponivel para associacao.")); break;
         case UsuarioError::Internal:
             callback(message(drogon::k500InternalServerError, "Erro interno ao acessar usuarios.")); break;
+        case UsuarioError::Forbidden:
+            callback(security::AuthorizationGuard::error(drogon::k403Forbidden)); break;
         }
     };
 }
@@ -97,7 +100,12 @@ std::optional<std::int64_t> academiaIdFromQuery(const drogon::HttpRequestPtr &re
         const auto equals = parameter.find('=');
         if (equals != std::string_view::npos
             && drogon::utils::urlDecode(parameter.substr(0, equals)) == "academia_id")
+        {
+            // Reject ambiguous scopes instead of accepting the last occurrence.
+            if (id) return std::nullopt;
             id = positiveId(drogon::utils::urlDecode(parameter.substr(equals + 1)));
+            if (!id) return std::nullopt;
+        }
         if (separator == std::string_view::npos)
             break;
         query.remove_prefix(separator + 1);
@@ -108,6 +116,7 @@ std::optional<std::int64_t> academiaIdFromQuery(const drogon::HttpRequestPtr &re
 
 void UsuarioController::criar(const drogon::HttpRequestPtr &req, HttpCallback &&callback)
 {
+    if (!security::AuthorizationGuard::require(req, security::Operation::UsuariosCreate, callback)) return;
     const auto json = req->getJsonObject();
     if (!json || !json->isObject() || !positiveJsonId((*json)["academia_id"])
         || !positiveJsonId((*json)["perfil_id"]) || !(*json)["nome"].isString()
@@ -118,10 +127,12 @@ void UsuarioController::criar(const drogon::HttpRequestPtr &req, HttpCallback &&
                          "Informe objeto JSON com academia_id, perfil_id, nome, email e senha; senha_hash nao e aceito."));
         return;
     }
-    services::NovoUsuario input{(*json)["academia_id"].asInt64(), (*json)["perfil_id"].asInt64(),
+    if (!security::AuthorizationGuard::tenant(req, (*json)["academia_id"].asInt64(), callback)) return;
+    const auto &actor = security::AuthorizationGuard::context(req);
+    services::NovoUsuario input{actor.identity.academiaId, (*json)["perfil_id"].asInt64(),
                                 (*json)["nome"].asString(), (*json)["email"].asString(),
                                 (*json)["senha"].asString()};
-    service().criar(input,
+    service().criar(actor, input,
         [callback](const models::Usuario &usuario)
         {
             auto response = drogon::HttpResponse::newHttpJsonResponse(toJson(usuario));
@@ -132,13 +143,15 @@ void UsuarioController::criar(const drogon::HttpRequestPtr &req, HttpCallback &&
 
 void UsuarioController::listar(const drogon::HttpRequestPtr &req, HttpCallback &&callback)
 {
+    if (!security::AuthorizationGuard::require(req, security::Operation::UsuariosRead, callback)) return;
     const auto academiaId = academiaIdFromQuery(req);
     if (!academiaId)
     {
         callback(message(drogon::k400BadRequest, "Informe academia_id positivo de 64 bits na query."));
         return;
     }
-    service().listarPorAcademia(*academiaId,
+    if (!security::AuthorizationGuard::tenant(req, *academiaId, callback)) return;
+    service().listarPorAcademia(security::AuthorizationGuard::context(req).identity.academiaId,
         [callback](const std::vector<models::Usuario> &usuarios)
         {
             Json::Value json(Json::arrayValue);
@@ -150,6 +163,7 @@ void UsuarioController::listar(const drogon::HttpRequestPtr &req, HttpCallback &
 void UsuarioController::buscarPorId(const drogon::HttpRequestPtr &req, HttpCallback &&callback,
                                     const std::string &textId)
 {
+    if (!security::AuthorizationGuard::require(req, security::Operation::UsuariosRead, callback)) return;
     const auto academiaId = academiaIdFromQuery(req);
     const auto id = positiveId(textId);
     if (!academiaId || !id)
@@ -157,7 +171,8 @@ void UsuarioController::buscarPorId(const drogon::HttpRequestPtr &req, HttpCallb
         callback(message(drogon::k400BadRequest, "Informe id e academia_id positivos de 64 bits."));
         return;
     }
-    service().buscarPorId(*academiaId, *id,
+    if (!security::AuthorizationGuard::tenant(req, *academiaId, callback)) return;
+    service().buscarPorId(security::AuthorizationGuard::context(req).identity.academiaId, *id,
         [callback](const models::Usuario &usuario)
         {
             callback(drogon::HttpResponse::newHttpJsonResponse(toJson(usuario)));

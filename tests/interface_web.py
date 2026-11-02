@@ -3,6 +3,7 @@
 import argparse
 from contextlib import closing
 import hashlib
+import http.cookiejar
 import json
 import os
 from pathlib import Path
@@ -24,6 +25,10 @@ def run(browser):
     before = hashlib.sha256(development_db.read_bytes()).digest() if development_db.exists() else None
     env = dict(os.environ)
     env["PATH"] = str(ROOT / "build") + os.pathsep + env["PATH"]
+    encoded = subprocess.check_output(
+        [str(ROOT / "build" / "security-tests" / "security_tests.exe"), "--fixture-hash"],
+        env=env, text=True,
+    ).strip()
     with tempfile.TemporaryDirectory(prefix="th21-", dir=ROOT / "build") as temporary:
         directory = Path(temporary)
         database = directory / "interface.db"
@@ -33,6 +38,11 @@ def run(browser):
                 "INSERT INTO academia (nome, cnpj, email, telefone, ativo) VALUES (?, ?, ?, ?, ?)",
                 [("Academia Centro", "12345678000190", "centro@example.test", "(11) 99999-0000", 1),
                  ("Studio Evolução", None, None, None, 0)],
+            )
+            db.execute("INSERT INTO perfil (id, nome) VALUES (17, 'Administrador')")
+            db.execute(
+                "INSERT INTO usuario (academia_id, perfil_id, nome, email, senha_hash) "
+                "VALUES (1, 17, 'Admin de teste', 'interface@example.test', ?)", (encoded,),
             )
             db.commit()
         with socket.socket() as sock:
@@ -59,9 +69,30 @@ def run(browser):
                 else:
                     raise RuntimeError("TrainingHub did not start")
 
-                def get(path):
-                    with urllib.request.urlopen(base + path, timeout=5) as response:
+                def get(path, opener=None):
+                    with (opener or urllib.request.build_opener()).open(base + path, timeout=5) as response:
                         return response.headers.get_content_type(), response.read()
+
+                def expect_status(path, status, opener=None):
+                    try:
+                        get(path, opener)
+                    except urllib.error.HTTPError as error:
+                        with error:
+                            assert error.code == status, (path, error.code)
+                    else:
+                        raise AssertionError(f"Expected {status}: {path}")
+
+                jar = http.cookiejar.CookieJar()
+                admin = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+
+                def login():
+                    body = {"academia_id": 1, "email": "interface@example.test", "senha": "TH24-test-password"}
+                    req = urllib.request.Request(base + "/api/auth/login", method="POST",
+                                                 data=json.dumps(body).encode(),
+                                                 headers={"Content-Type": "application/json"})
+                    with admin.open(req, timeout=10) as response:
+                        context = json.loads(response.read())
+                        assert context["academiaId"] == 1 and context["perfilId"] == 17
 
                 for path, content_type in [
                     ("/", "text/html"), ("/index.html", "text/html"),
@@ -77,11 +108,14 @@ def run(browser):
                     assert body, path
                 assert json.loads(get("/api/health")[1]) == {"status": "ok", "application": "TrainingHub"}
                 assert json.loads(get("/api/health/database")[1]) == {"status": "ok", "database": "connected"}
-                academias = json.loads(get("/api/academias")[1])
-                assert len(academias) == 2
+                expect_status("/api/academias", 401)
+                login()
+                academias = json.loads(get("/api/academias", admin)[1])
+                assert len(academias) == 1 and academias[0]["id"] == 1
                 assert set(academias[0]) == {"id", "nome", "cnpj", "email", "telefone", "ativo", "criado_em"}
-                assert academias[0]["ativo"] is True and academias[1]["ativo"] is False
-                assert academias[1]["cnpj"] is None
+                assert academias[0]["ativo"] is True
+                assert academias[0]["nome"] == "Academia Centro"
+                assert all(item["nome"] != "Studio Evolução" for item in academias)
                 for path in ["/config.json", "/migrations/001_initial_schema.sql", "/src/main.cpp"]:
                     try:
                         get(path)
@@ -89,7 +123,8 @@ def run(browser):
                         assert error.code == 404
                     else:
                         raise AssertionError(f"Private file exposed: {path}")
-                print("TH-21 HTTP passed: HTML, assets/MIME, real Academia contract, health, private files.", flush=True)
+                print("TH-21 HTTP passed: public HTML/assets/MIME/health, anonymous API denial, "
+                      "authenticated own-Academia contract, cross-tenant exclusion, private files.", flush=True)
                 if browser:
                     chrome = os.environ.get("TH21_CHROME") or shutil.which("google-chrome") or shutil.which("chromium")
                     if not chrome:
@@ -98,13 +133,31 @@ def run(browser):
                             chrome = str(candidate)
                     if not chrome:
                         raise RuntimeError("Set TH21_CHROME to an installed Chrome/Chromium executable")
+                    browser_env = env | {"TH21_SESSION_ID": next(cookie.value for cookie in jar
+                                                                if cookie.name == "JSESSIONID")}
                     subprocess.run(["node", str(ROOT / "tests" / "interface_web.mjs"), base, chrome,
-                                    str(directory / "chrome-profile")], env=env, cwd=ROOT, check=True)
+                                    str(directory / "chrome-profile")], env=browser_env, cwd=ROOT, check=True)
                 with closing(sqlite3.connect(database)) as db:
-                    db.execute("DELETE FROM academia")
+                    db.execute("UPDATE academia SET cnpj=NULL, email=NULL, telefone=NULL WHERE id=1")
                     db.commit()
-                assert json.loads(get("/api/academias")[1]) == []
-                print("TH-21 real empty list passed.", flush=True)
+                own = json.loads(get("/api/academias", admin)[1])
+                assert len(own) == 1 and all(own[0][field] is None for field in ["cnpj", "email", "telefone"])
+                with closing(sqlite3.connect(database)) as db:
+                    db.execute("UPDATE academia SET ativo=0 WHERE id=1")
+                    db.commit()
+                expect_status("/api/academias", 401, admin)
+                # An authenticated tenant always has an active Academia. Missing or
+                # inactive tenants now return 401; empty UI rendering is tested in CDP.
+                with closing(sqlite3.connect(database)) as db:
+                    db.execute("UPDATE academia SET ativo=1 WHERE id=1")
+                    db.commit()
+                login()
+                with closing(sqlite3.connect(database)) as db:
+                    db.execute("DELETE FROM academia WHERE id=1")
+                    db.commit()
+                expect_status("/api/academias", 401, admin)
+                print("TH-21 NULL contract and inactive/missing tenant denial passed; "
+                      "empty rendering remains covered by browser response fixtures.", flush=True)
             finally:
                 server.terminate()
                 server.wait(timeout=10)

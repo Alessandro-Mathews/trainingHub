@@ -11,7 +11,7 @@ class AuthController : public drogon::HttpController<AuthController>
 public:
     METHOD_LIST_BEGIN
     ADD_METHOD_TO(AuthController::login, "/api/auth/login", drogon::Post);
-    ADD_METHOD_TO(AuthController::me, "/api/auth/me", drogon::Get);
+    ADD_METHOD_TO(AuthController::me, "/api/auth/me", drogon::Get, "traininghub::security::AuthenticationFilter");
     ADD_METHOD_TO(AuthController::logout, "/api/auth/logout", drogon::Post);
     METHOD_LIST_END
 

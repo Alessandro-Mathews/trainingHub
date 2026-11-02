@@ -10,7 +10,7 @@ class AcademiaService
 public:
     explicit AcademiaService(repositories::AcademiaRepository repository);
 
-    void listAll(
+    void listarPorAcademia(std::int64_t academiaId,
         repositories::AcademiaRepository::FindAllCallback callback,
         repositories::AcademiaRepository::ErrorCallback errorCallback
     ) const;

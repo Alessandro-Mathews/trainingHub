@@ -25,5 +25,13 @@ target_include_directories(sqlite_foreign_keys_tests PRIVATE ../include)
 target_link_libraries(sqlite_foreign_keys_tests PRIVATE Drogon::Drogon SQLite3_lib)
 
 enable_testing()
+add_executable(authorization_tests
+    authorization_tests.cpp
+    ../src/security/AuthorizationService.cpp
+    ../src/repositories/AuthContextRepository.cpp
+)
+target_include_directories(authorization_tests PRIVATE ../include)
+target_link_libraries(authorization_tests PRIVATE Drogon::Drogon)
+add_test(NAME authorization COMMAND authorization_tests)
 add_test(NAME security COMMAND security_tests)
 add_test(NAME sqlite_foreign_keys COMMAND sqlite_foreign_keys_tests)
