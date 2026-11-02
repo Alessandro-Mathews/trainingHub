@@ -10,7 +10,7 @@ class AcademiaController : public drogon::HttpController<AcademiaController>
 {
 public:
     METHOD_LIST_BEGIN
-    ADD_METHOD_TO(AcademiaController::listAll, "/api/academias", drogon::Get);
+    ADD_METHOD_TO(AcademiaController::listAll, "/api/academias", drogon::Get, "traininghub::security::AuthenticationFilter");
     METHOD_LIST_END
 
     void listAll(

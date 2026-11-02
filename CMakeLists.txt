@@ -25,6 +25,7 @@ add_executable(traininghub
     src/repositories/AcademiaRepository.cpp
     src/repositories/PerfilRepository.cpp
     src/repositories/UsuarioRepository.cpp
+    src/repositories/AuthContextRepository.cpp
 
     src/services/AcademiaService.cpp
     src/services/PerfilService.cpp
@@ -33,6 +34,9 @@ add_executable(traininghub
 
     src/security/SessionManager.cpp
     src/security/PasswordHasher.cpp
+    src/security/AuthenticationFilter.cpp
+    src/security/AuthorizationService.cpp
+    src/security/AuthorizationGuard.cpp
 )
 
 target_include_directories(traininghub

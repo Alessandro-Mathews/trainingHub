@@ -11,6 +11,7 @@ enum class PerfilError
     NotFound,
     DuplicateName,
     InUse,
+    Protected,
     Database
 };
 

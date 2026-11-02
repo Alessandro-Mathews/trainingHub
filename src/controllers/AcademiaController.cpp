@@ -1,5 +1,6 @@
 #include "traininghub/controllers/AcademiaController.h"
 #include "traininghub/services/AcademiaService.h"
+#include "traininghub/security/AuthorizationGuard.h"
 
 #include <drogon/drogon.h>
 #include <utility>
@@ -9,15 +10,16 @@ namespace traininghub::controllers
 {
 
 void AcademiaController::listAll(
-    const drogon::HttpRequestPtr &,
+    const drogon::HttpRequestPtr &req,
     std::function<void(const drogon::HttpResponsePtr &)> &&callback
 ) const
 {
+    if (!security::AuthorizationGuard::require(req, security::Operation::AcademiasRead, callback)) return;
     services::AcademiaService service{
         repositories::AcademiaRepository{drogon::app().getDbClient("default")}
     };
 
-    service.listAll(
+    service.listarPorAcademia(security::AuthorizationGuard::context(req).identity.academiaId,
         [callback](const std::vector<models::Academia> &academias)
         {
             Json::Value response(Json::arrayValue);

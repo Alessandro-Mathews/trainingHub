@@ -1,6 +1,7 @@
 #include "traininghub/controllers/PerfilController.h"
 
 #include "traininghub/services/PerfilService.h"
+#include "traininghub/security/AuthorizationGuard.h"
 
 #include <drogon/drogon.h>
 #include <utility>
@@ -49,6 +50,9 @@ services::PerfilService::ErrorCallback onError(HttpCallback callback)
             break;
         case PerfilError::Database:
             callback(message(drogon::k500InternalServerError, "Erro interno ao acessar perfis"));
+            break;
+        case PerfilError::Protected:
+            callback(security::AuthorizationGuard::error(drogon::k403Forbidden));
             break;
         }
     };
@@ -106,9 +110,10 @@ drogon::HttpResponsePtr changed(drogon::HttpStatusCode status,
 }
 
 void PerfilController::listar(
-    const drogon::HttpRequestPtr &,
+    const drogon::HttpRequestPtr &req,
     std::function<void(const drogon::HttpResponsePtr &)> &&callback)
 {
+    if (!security::AuthorizationGuard::require(req, security::Operation::PerfisRead, callback)) return;
     service().listar(
         [callback](const std::vector<models::Perfil> &perfis)
         {
@@ -120,10 +125,11 @@ void PerfilController::listar(
 }
 
 void PerfilController::buscarPorId(
-    const drogon::HttpRequestPtr &,
+    const drogon::HttpRequestPtr &req,
     std::function<void(const drogon::HttpResponsePtr &)> &&callback,
     std::int64_t id)
 {
+    if (!security::AuthorizationGuard::require(req, security::Operation::PerfisRead, callback)) return;
     service().buscarPorId(id,
         [callback](const models::Perfil &perfil)
         {
@@ -135,6 +141,7 @@ void PerfilController::criar(
     const drogon::HttpRequestPtr &req,
     std::function<void(const drogon::HttpResponsePtr &)> &&callback)
 {
+    if (!security::AuthorizationGuard::require(req, security::Operation::PerfisManage, callback)) return;
     const auto perfil = readPerfil(req, false);
     if (!perfil)
     {
@@ -154,6 +161,7 @@ void PerfilController::atualizar(
     std::function<void(const drogon::HttpResponsePtr &)> &&callback,
     std::int64_t id)
 {
+    if (!security::AuthorizationGuard::require(req, security::Operation::PerfisManage, callback)) return;
     const auto perfil = readPerfil(req, true);
     if (!perfil)
     {
@@ -169,10 +177,11 @@ void PerfilController::atualizar(
 }
 
 void PerfilController::excluir(
-    const drogon::HttpRequestPtr &,
+    const drogon::HttpRequestPtr &req,
     std::function<void(const drogon::HttpResponsePtr &)> &&callback,
     std::int64_t id)
 {
+    if (!security::AuthorizationGuard::require(req, security::Operation::PerfisManage, callback)) return;
     service().excluir(id,
         [callback, id]
         {

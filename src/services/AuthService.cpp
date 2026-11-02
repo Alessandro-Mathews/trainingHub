@@ -1,5 +1,6 @@
 #include "traininghub/services/AuthService.h"
 #include "traininghub/security/PasswordHasher.h"
+#include "traininghub/security/AuthorizationService.h"
 
 #include <exception>
 #include <utility>
@@ -7,8 +8,9 @@
 namespace traininghub::services
 {
 
-AuthService::AuthService(repositories::UsuarioRepository repository)
-    : repository_(std::move(repository))
+AuthService::AuthService(repositories::UsuarioRepository repository,
+                         repositories::AuthContextRepository authContext)
+    : repository_(std::move(repository)), authContext_(std::move(authContext))
 {
 }
 
@@ -18,7 +20,7 @@ void AuthService::authenticate(
 {
     repository_.findByAcademiaAndEmail(
         academiaId, email,
-        [password, callback, errorCallback](const std::optional<models::Usuario> &user)
+        [password, callback, errorCallback, authContext = authContext_](const std::optional<models::Usuario> &user)
         {
             bool validPassword{};
             try
@@ -41,8 +43,14 @@ void AuthService::authenticate(
                 return;
             }
 
-            callback(security::AuthSession{
-                user->id, user->academia_id, user->perfil_id});
+            security::AuthorizationService{authContext}.validate(
+                {user->id, user->academia_id, user->perfil_id},
+                [callback](const security::ValidatedAuthContext &context) { callback(context.identity); },
+                [callback, errorCallback](security::AuthError error)
+                {
+                    if (error == security::AuthError::Internal) errorCallback();
+                    else callback(std::nullopt);
+                });
         },
         [errorCallback](const drogon::orm::DrogonDbException &)
         {

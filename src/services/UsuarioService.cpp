@@ -1,5 +1,6 @@
 #include "traininghub/services/UsuarioService.h"
 #include "traininghub/security/PasswordHasher.h"
+#include "traininghub/security/AuthorizationService.h"
 
 #include <utility>
 
@@ -37,7 +38,8 @@ UsuarioService::UsuarioService(repositories::UsuarioRepository usuarios,
 {
 }
 
-void UsuarioService::criar(const NovoUsuario &input, FindCallback callback,
+void UsuarioService::criar(const security::ValidatedAuthContext &actor,
+                           const NovoUsuario &input, FindCallback callback,
                            ErrorCallback errorCallback) const
 {
     if (input.academia_id <= 0 || input.perfil_id <= 0
@@ -48,18 +50,30 @@ void UsuarioService::criar(const NovoUsuario &input, FindCallback callback,
         return;
     }
 
+    if (!security::AuthorizationService::allows(actor.role, security::Operation::UsuariosCreate)
+        || input.academia_id != actor.identity.academiaId)
+    {
+        errorCallback(UsuarioError::Forbidden);
+        return;
+    }
+
     // Repositories are copied: the calling service may expire before callbacks run.
     academias_.buscarPorId(input.academia_id,
-        [input, callback, errorCallback, perfis = perfis_, usuarios = usuarios_]
+        [actor, input, callback, errorCallback, perfis = perfis_, usuarios = usuarios_]
         (const std::optional<models::Academia> &academia)
         {
             if (!academia) { errorCallback(UsuarioError::AcademiaNotFound); return; }
             if (!academia->ativo) { errorCallback(UsuarioError::AcademiaInactive); return; }
             perfis.buscarPorId(input.perfil_id,
-                [input, callback, errorCallback, usuarios](const std::optional<models::Perfil> &perfil)
+                [actor, input, callback, errorCallback, usuarios](const std::optional<models::Perfil> &perfil)
                 {
                     if (!perfil) { errorCallback(UsuarioError::PerfilNotFound); return; }
                     if (perfil->ativo != 1) { errorCallback(UsuarioError::PerfilInactive); return; }
+                    if (!security::AuthorizationService::canAssign(actor.role, security::roleFromName(perfil->nome)))
+                    {
+                        errorCallback(UsuarioError::Forbidden);
+                        return;
+                    }
                     models::Usuario usuario;
                     usuario.academia_id = input.academia_id;
                     usuario.perfil_id = input.perfil_id;

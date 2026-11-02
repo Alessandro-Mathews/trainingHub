@@ -1,5 +1,6 @@
 #include "traininghub/controllers/AuthController.h"
 #include "traininghub/security/SessionManager.h"
+#include "traininghub/security/AuthorizationGuard.h"
 #include "traininghub/services/AuthService.h"
 
 #include <drogon/drogon.h>
@@ -58,7 +59,8 @@ void AuthController::login(
     }
 
     services::AuthService service{
-        repositories::UsuarioRepository{drogon::app().getDbClient("default")}};
+        repositories::UsuarioRepository{drogon::app().getDbClient("default")},
+        repositories::AuthContextRepository{drogon::app().getDbClient("default")}};
     service.authenticate(
         (*json)["academia_id"].asInt64(), (*json)["email"].asString(),
         (*json)["senha"].asString(),
@@ -92,14 +94,8 @@ void AuthController::me(
     const drogon::HttpRequestPtr &req,
     std::function<void(const drogon::HttpResponsePtr &)> &&callback) const
 {
-    const auto user = security::SessionManager::getAuthenticatedUser(req->session());
-    if (!user)
-    {
-        callback(messageResponse(drogon::k401Unauthorized,
-                                 "Usuario nao autenticado."));
-        return;
-    }
-    callback(contextResponse(*user));
+    if (!security::AuthorizationGuard::require(req, security::Operation::ContextRead, callback)) return;
+    callback(contextResponse(security::AuthorizationGuard::context(req).identity));
 }
 
 void AuthController::logout(
