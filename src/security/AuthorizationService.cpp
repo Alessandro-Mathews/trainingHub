@@ -46,6 +46,8 @@ bool AuthorizationService::allows(Role role, Operation operation)
     case Operation::PerfisRead:
     case Operation::UsuariosRead:
     case Operation::UsuariosCreate:
+    case Operation::AlunosCreate:
+    case Operation::AlunosRead:
         return role == Role::ADMIN || role == Role::GESTOR;
     }
     return false;
