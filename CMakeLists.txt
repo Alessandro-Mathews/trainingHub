@@ -22,18 +22,21 @@ add_executable(traininghub
     src/controllers/AuthController.cpp
     src/controllers/UsuarioController.cpp
     src/controllers/AlunoController.cpp
+    src/controllers/InstrutorController.cpp
 
     src/repositories/AcademiaRepository.cpp
     src/repositories/PerfilRepository.cpp
     src/repositories/UsuarioRepository.cpp
     src/repositories/AuthContextRepository.cpp
     src/repositories/AlunoRepository.cpp
+    src/repositories/InstrutorRepository.cpp
 
     src/services/AcademiaService.cpp
     src/services/PerfilService.cpp
     src/services/AuthService.cpp
     src/services/UsuarioService.cpp
     src/services/AlunoService.cpp
+    src/services/InstrutorService.cpp
 
     src/security/SessionManager.cpp
     src/security/PasswordHasher.cpp

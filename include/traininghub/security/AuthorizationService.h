@@ -6,7 +6,7 @@
 namespace traininghub::security
 {
 enum class Operation { ContextRead, AcademiasRead, PerfisRead, PerfisManage, UsuariosRead, UsuariosCreate,
-                       AlunosCreate, AlunosRead };
+                       AlunosCreate, AlunosRead, InstrutoresCreate, InstrutoresRead };
 enum class AuthError { Unauthorized, Forbidden, Internal };
 
 class AuthorizationService
