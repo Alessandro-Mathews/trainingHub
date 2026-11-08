@@ -78,14 +78,125 @@ try {
   await call('Page.enable');
   await call('Runtime.enable');
   await call('Network.enable');
-  assert(process.env.TH21_SESSION_ID, 'Authenticated fixture session required');
-  const sessionCookie = await call('Network.setCookie', { name: 'JSESSIONID', value: process.env.TH21_SESSION_ID,
-    url: base, path: '/', httpOnly: true, sameSite: 'Strict' });
-  assert.equal(sessionCookie.success, true);
   on('Runtime.exceptionThrown', (event) => errors.push(event.exceptionDetails));
   on('Network.requestWillBeSent', (event) => requests.push(event.request.url));
+  const password = 'TH24-test-password';
+  async function fillLogin(code = '1', email = 'interface@example.test', secret = password) {
+    await evaluate(`(() => {
+      for (const [id, value] of ${JSON.stringify([['academia-code', code], ['login-email', email], ['login-password', secret]])}) {
+        const input = document.getElementById(id);
+        input.value = value;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    })()`);
+  }
+  async function loginReady() {
+    await until(`location.pathname === '/login.html' && document.querySelector('#login-submit')?.disabled === false`);
+  }
+  async function dashboardReady() {
+    await until(`location.pathname === '/index.html' && document.querySelector('#authenticated-app')?.hidden === false`);
+  }
+  // Start without a fixture cookie: the real page must establish its own session.
+  await call('Page.navigate', { url: `${base}/index.html` });
+  await loginReady();
+  assert.equal(await evaluate(`document.querySelector('#login-password').type`), 'password');
+  for (const width of [1440, 375]) {
+    await viewport(width);
+    assert.equal(await evaluate(`document.documentElement.scrollWidth <= innerWidth`), true);
+    await screenshot(`login-${width}`);
+  }
+  await evaluate(`document.querySelector('#academia-code').focus()`);
+  await call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+  await call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+  assert.equal(await evaluate(`document.activeElement.id`), 'login-email');
+  for (const code of ['0', '-1', '1.5', 'abc', '9223372036854775808']) {
+    await fillLogin(code);
+    await click('#login-submit');
+    assert.equal(await evaluate(`document.querySelector('#academia-code').validity.valid`), false);
+  }
+  await fillLogin('1', 'invalid-email');
+  await click('#login-submit');
+  assert.equal(await evaluate(`document.querySelector('#login-email').validity.valid`), false);
+  await fillLogin('1', 'interface@example.test', '');
+  await click('#login-submit');
+  assert.equal(await evaluate(`document.querySelector('#login-password').validity.valid`), false);
+  await fillLogin('1', 'interface@example.test', 'wrong');
+  await click('#login-submit');
+  await until(`document.querySelector('#login-feedback')?.textContent === 'Não foi possível entrar. Verifique suas credenciais.' && !document.querySelector('#login-submit').disabled`);
+  assert.equal(await evaluate(`document.querySelector('#login-password').value`), '');
+
+  let loginMode = 'hold';
+  let heldLogin;
+  let interceptedLogins = 0;
+  const loginInterceptionErrors = [];
+  on('Fetch.requestPaused', async ({ requestId, request }) => {
+    if (request.url !== `${base}/api/auth/login`) return;
+    try {
+      interceptedLogins++;
+      if (loginMode === 'hold') { heldLogin = requestId; return; }
+      if (loginMode === 'network') {
+        await call('Fetch.failRequest', { requestId, errorReason: 'ConnectionFailed' });
+      } else {
+        await call('Fetch.fulfillRequest', { requestId, responseCode: Number(loginMode),
+          responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
+          body: Buffer.from(JSON.stringify({ message: '<img src=x onerror="window.injected=true"> SQL internal detail' })).toString('base64') });
+      }
+    } catch (error) { loginInterceptionErrors.push(error); }
+  });
+  await call('Fetch.enable', { patterns: [{ urlPattern: `${base}/api/auth/login`, requestStage: 'Request' }] });
+  for (const [mode, text] of [['400', 'Confira os dados informados.'],
+                            ['500', 'Não foi possível entrar agora. Tente novamente.'],
+                            ['network', 'Não foi possível conectar ao TrainingHub.']]) {
+    loginMode = mode;
+    await fillLogin();
+    await click('#login-submit');
+    await until(`document.querySelector('#login-feedback')?.textContent === ${JSON.stringify(text)} && !document.querySelector('#login-submit').disabled`);
+    assert.equal(await evaluate(`document.querySelector('#login-feedback img') === null && window.injected !== true`), true);
+  }
+  loginMode = 'hold';
+  await fillLogin();
+  const attemptsBefore = interceptedLogins;
+  await click('#login-submit');
+  await until(`document.querySelector('#login-form').getAttribute('aria-busy') === 'true'`);
+  assert.equal(await evaluate(`document.querySelector('#login-submit').disabled`), true);
+  assert.equal(await evaluate(`document.querySelector('#login-submit-text').textContent`), 'Entrando...');
+  await evaluate(`document.querySelector('#login-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))`);
+  for (let i = 0; !heldLogin && i < 100; i++) await delay(20);
+  assert(heldLogin);
+  await delay(100);
+  assert.equal(interceptedLogins - attemptsBefore, 1, 'Double submit issued another request');
+  await screenshot('login-loading-375');
+  await call('Fetch.continueRequest', { requestId: heldLogin });
+  await dashboardReady();
+  await call('Fetch.disable');
+  assert.deepEqual(loginInterceptionErrors, []);
+  assert.equal(await evaluate(`localStorage.length === 0 && sessionStorage.length === 0`), true);
+  assert.equal(requests.some((url) => url.includes(password) || url.includes('senha=')), false);
+  await call('Page.navigate', { url: `${base}/login.html` });
+  await dashboardReady();
+  await click('#logout-button');
+  await loginReady();
+  await fillLogin('1', 'gestor@example.test');
+  await click('#login-submit');
+  await dashboardReady();
+  await until(`document.querySelector('#academias-count')?.textContent === 'Sem permissão'`);
+  assert.equal(await evaluate(`location.pathname`), '/index.html');
+  await click('#logout-button');
+  await loginReady();
+  await fillLogin('1', 'unknown@example.test');
+  await click('#login-submit');
+  await until(`document.querySelector('#login-feedback')?.textContent === 'Sua conta não tem permissão para acessar esta área.' && !document.querySelector('#login-submit').disabled`);
+  assert.equal(await evaluate(`location.pathname`), '/login.html');
+  await call('Page.navigate', { url: `${base}/index.html` });
+  await until(`document.querySelector('#session-title')?.textContent === 'Acesso indisponível'`);
+  assert.equal(await evaluate(`document.querySelector('#authenticated-app').hidden`), true);
+  await click('#session-logout');
+  await loginReady();
+  await fillLogin();
+  await click('#login-submit');
+  await dashboardReady();
+  console.log('TH-28 Chrome passed: real form/session/logout, validation, keyboard, mobile/desktop, loading/double submit, HTTP/network errors, 401 redirects, 403 without loop, no storage or credential URL.');
   await viewport(1440);
-  await call('Page.navigate', { url: base });
   await until(`document.querySelector('#academias-total')?.textContent === '1' && document.querySelector('#database-status')?.textContent === 'Conectado'`);
   assert.equal(await evaluate(`document.querySelector('#system-status').textContent`), 'Operacional');
   assert.equal(await evaluate(`document.querySelector('#brand-logo').naturalWidth > 0`), true);
@@ -158,7 +269,7 @@ try {
   await until(`document.querySelector('#academias-total').textContent === '0'`);
   assert.match(await evaluate(`document.querySelector('#academias-state').textContent`), /Nenhuma academia cadastrada/);
   await screenshot('empty-375');
-  for (mode of ['error', 'unauthenticated', 'forbidden', 'network', 'invalid']) {
+  for (mode of ['error', 'forbidden', 'network', 'invalid']) {
     await click('#refresh-academias');
     await until(`!document.querySelector('#academias-error').hidden && document.querySelector('#academias-panel').getAttribute('aria-busy') === 'false'`);
     assert.equal(await evaluate(`document.querySelector('#academias-total').textContent`), '—');
@@ -182,7 +293,16 @@ try {
   assert.equal(await evaluate(`document.querySelectorAll('#academias-rows img').length`), 0);
   assert.equal(await evaluate(`window.injected === true`), false);
   assert.match(await evaluate(`document.querySelector('#academias-rows').textContent`), /<img src=x/);
+  // A real session revocation makes both the resource and /me return 401.
+  // This replaces the old generic-error assertion with the approved login redirect.
+  await evaluate(`(await import('/js/api.js')).logout()`);
+  mode = 'unauthenticated';
+  await click('#refresh-academias');
+  await loginReady();
   await call('Fetch.disable');
+  await fillLogin();
+  await click('#login-submit');
+  await dashboardReady();
   await evaluate(`document.querySelector('#brand-logo').src = '/images/not-present.png'`);
   await until(`document.querySelector('#brand-logo').hidden`);
   assert.equal(await evaluate(`document.querySelector('.brand').textContent.includes('TrainingHub')`), true);
