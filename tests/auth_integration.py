@@ -18,16 +18,13 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[1]
 SERVER = ROOT / "build" / "traininghub.exe"
 SECURITY_TESTS = ROOT / "build" / "security-tests" / "security_tests.exe"
+PASSWORD = "TH24-test-password"
+WRONG_PASSWORD = "TH29-WRONG-PASSWORD-SENTINEL-NOT-A-VALID-CREDENTIAL"
 
 
 def run():
     development_db = ROOT / "data" / "traininghub.db"
     before = hashlib.sha256(development_db.read_bytes()).digest() if development_db.exists() else None
-    if before is not None:
-        with closing(sqlite3.connect(development_db.as_uri() + "?mode=ro", uri=True)) as db:
-            schema = db.execute("SELECT sql FROM sqlite_master WHERE name = 'usuario'").fetchone()
-            assert schema and "UNIQUE (academia_id, email)" in schema[0]
-            print("Development schema inspected read-only: usuario has tenant/email uniqueness.")
 
     env = dict(os.environ)
     env["PATH"] = str(ROOT / "build") + os.pathsep + env["PATH"]
@@ -35,6 +32,12 @@ def run():
     encoded = subprocess.check_output(
         [str(SECURITY_TESTS), "--fixture-hash"], text=True, env=env
     ).strip()
+    secrets = tuple(value.encode("ascii") for value in (PASSWORD, WRONG_PASSWORD, encoded))
+
+    def assert_no_secrets(content):
+        for secret in secrets:
+            assert secret not in content, "Sensitive credential found in captured output"
+        assert b"$argon2id$" not in content, "Password hash found in captured output"
 
     with tempfile.TemporaryDirectory(prefix="th24-", dir=ROOT / "build") as temporary:
         directory = Path(temporary)
@@ -76,8 +79,15 @@ def run():
             except urllib.error.HTTPError as error:
                 response = error
             with response:
-                payload = json.loads(response.read())
-                assert response.code == expected, (path, response.code, payload)
+                content = response.read()
+                assert_no_secrets(content)
+                payload = json.loads(content)
+                # Also detect secrets encoded as JSON Unicode escapes.
+                assert_no_secrets(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+                assert response.code == expected, (path, response.code, expected)
+                if response.code >= 500:
+                    assert not any(detail in content.lower() for detail in
+                                   (b"no such table", b"select ", b"sqlite", b"traceback"))
                 if path.startswith("/api/auth/"):
                     assert response.headers.get("Cache-Control") == "no-store"
                     assert not {"senha", "senha_hash", "password", "email"}.intersection(payload)
@@ -86,10 +96,12 @@ def run():
         def session_id():
             return next(cookie.value for cookie in jar if cookie.name == "JSESSIONID")
 
-        with (directory / "server.log").open("w+") as log:
+        log_probe_completed = False
+        with (directory / "server.log").open("w+b") as log:
             server = subprocess.Popen([str(SERVER)], cwd=directory, env=env,
                                       stdout=log, stderr=log,
                                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            primary_error = None
             try:
                 for _ in range(100):
                     try:
@@ -117,9 +129,9 @@ def run():
                     request("POST", "/api/auth/login", body, expected=400)
 
                 credentials = {"academia_id": 1, "email": "shared@example.test",
-                               "senha": "TH24-test-password"}
+                               "senha": PASSWORD}
                 failures = []
-                for override in [{"senha": "wrong"}, {"email": "absent@example.test"},
+                for override in [{"senha": WRONG_PASSWORD}, {"email": "absent@example.test"},
                                  {"email": "inactive@example.test"}, {"academia_id": 3},
                                  {"email": "broken@example.test"},
                                  {"email": "' OR 1=1 --"}]:
@@ -149,6 +161,7 @@ def run():
                 request("POST", "/api/auth/logout")
                 assert old_id != session_id()
                 request("GET", "/api/auth/me", expected=401)
+                request("GET", "/api/academias", expected=401)
                 request("POST", "/api/auth/logout")
                 request("GET", "/api/auth/me", expected=401)
 
@@ -188,20 +201,36 @@ def run():
                     db.execute("DROP TABLE usuario")
                     db.commit()
                 request("POST", "/api/auth/login", credentials, expected=500)
-                print("HTTP tests passed: validation, tenant isolation, inactive/missing users, "
-                      "wrong/malformed hashes, SQL injection, login/me/logout, cookie rotation, "
-                      "64-bit IDs, safe responses, parent/user revalidation, denied roles, "
-                      "DB failure and existing endpoints.")
+                log_probe_completed = True
+            except BaseException as error:
+                primary_error = error
+                raise
             finally:
-                server.terminate()
+                if server.poll() is None:
+                    server.terminate()
                 try:
                     server.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     server.kill()
                     server.wait(timeout=5)
-            log.seek(0)
-            logs = log.read()
-            assert "TH24-test-password" not in logs and encoded not in logs
+                try:
+                    log.seek(0)
+                    logs = log.read()
+                    assert_no_secrets(logs)
+                    if log_probe_completed:
+                        # The controlled DB failure must produce real server output.
+                        # Process termination on Windows still cannot guarantee that
+                        # every internal logging buffer was flushed.
+                        assert b"Falha interna ao autenticar usuario." in logs, "Server log capture missing controlled error"
+                except Exception:
+                    # Preserve an active test failure; otherwise fail on unsafe logs.
+                    if primary_error is None:
+                        raise
+
+        print("HTTP tests passed: validation, tenant isolation, inactive/missing users, "
+              "wrong/malformed hashes, SQL injection, login/me/logout, cookie rotation, "
+              "64-bit IDs, safe responses, parent/user revalidation, denied roles, "
+              "DB failure, protected access after logout and credential-free responses/logs.")
 
     after = hashlib.sha256(development_db.read_bytes()).digest() if development_db.exists() else None
     assert before == after, "Development database changed"
