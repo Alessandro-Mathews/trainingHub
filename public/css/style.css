@@ -133,3 +133,34 @@ h2 { font-size: 1rem; font-weight: 600; line-height: 1.5; margin-bottom: 12px; }
   .table tbody td { max-width: 210px; }
   .content-footer { flex-direction: column; gap: 6px; }
 }
+
+.auth-page { min-height: 100dvh; background: var(--th-background); }
+.auth-page .auth-main { max-width: 100%; min-height: 100dvh; padding: 40px 20px 24px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.auth-card { width: 100%; max-width: 460px; padding: 36px 40px; border-top: 4px solid var(--th-success); box-shadow: 0 12px 40px #0f172a08; }
+.auth-brand { text-align: center; margin-bottom: 30px; }
+.auth-brand img { object-fit: contain; border-radius: 12px; }
+.auth-name { font-size: 1.6rem; font-weight: 700; letter-spacing: -.7px; margin: 12px 0 2px; }
+.auth-slogan { color: var(--th-secondary-text); font-size: .74rem; margin: 0; }
+.auth-heading { margin-bottom: 26px; }
+.auth-heading h1 { font-size: 1.4rem; line-height: 1.35; }
+.auth-heading > p:last-child { color: var(--th-secondary-text); font-size: .82rem; margin-bottom: 0; }
+.auth-card .form-label { font-size: .82rem; font-weight: 600; }
+.auth-card .form-control { min-height: 46px; border-color: var(--th-light); border-radius: 5px; font-size: 1rem; }
+.auth-card .form-control:focus { border-color: var(--th-success-dark); box-shadow: 0 0 0 3px #16a34a20; }
+.auth-card .form-text { color: var(--th-secondary-text); font-size: .72rem; }
+.auth-feedback { min-height: 1.5em; font-size: .82rem; color: var(--th-secondary-text); overflow-wrap: anywhere; }
+.auth-feedback-error { color: #9f1239; }
+.auth-submit { width: 100%; min-height: 48px; font-size: .9rem; }
+.auth-submit span { margin-left: 0; }
+.auth-submit .spinner-border { margin-right: 8px; }
+.auth-footer { text-align: center; color: var(--th-secondary-text); font-size: .7rem; margin: 24px 0 0; }
+.topbar-actions, .session-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.session-gate { min-height: 100dvh; display: grid; place-items: center; padding: 24px; }
+.session-card { width: 100%; max-width: 520px; padding: 32px; }
+.session-card h1 { font-size: 1.5rem; }
+.session-card p { overflow-wrap: anywhere; }
+@media (max-width: 575.98px) {
+  .auth-page .auth-main { padding: 24px 16px; }
+  .auth-card { padding: 28px 24px; }
+  .auth-brand img { width: 60px; height: 60px; }
+}

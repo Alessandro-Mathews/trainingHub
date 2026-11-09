@@ -1,4 +1,4 @@
-import { getJson } from './api.js';
+import { getJson, getAuthContext, logout } from './api.js';
 import { loadAcademias } from './academias.js';
 
 const pages = ['dashboard', 'academias'];
@@ -54,6 +54,82 @@ for (const link of document.querySelectorAll('.sidebar a[href^="#"]')) {
 document.getElementById('refresh-academias').addEventListener('click', loadAcademias);
 document.getElementById('retry-academias').addEventListener('click', loadAcademias);
 navigate(false);
-loadAcademias();
-loadHealth('/api/health', 'system-status', (data) => data?.status === 'ok' && data.application === 'TrainingHub', 'Operacional');
-loadHealth('/api/health/database', 'database-status', (data) => data?.status === 'ok' && data.database === 'connected', 'Conectado');
+
+const authenticatedApp = document.getElementById('authenticated-app');
+const sessionState = document.getElementById('session-state');
+const sessionTitle = document.getElementById('session-title');
+const sessionMessage = document.getElementById('session-message');
+const retrySession = document.getElementById('retry-session');
+const sessionLogout = document.getElementById('session-logout');
+const logoutButton = document.getElementById('logout-button');
+let checkingSession = false;
+let loggingOut = false;
+
+async function checkSession() {
+  if (checkingSession || loggingOut) return;
+  checkingSession = true;
+  authenticatedApp.hidden = true;
+  sessionState.hidden = false;
+  sessionState.setAttribute('aria-busy', 'true');
+  sessionTitle.textContent = 'Verificando sessão...';
+  sessionMessage.textContent = 'Aguarde para acessar seu painel.';
+  retrySession.hidden = true;
+  sessionLogout.hidden = true;
+  try {
+    await getAuthContext();
+    sessionState.hidden = true;
+    authenticatedApp.hidden = false;
+    loadAcademias();
+    loadHealth('/api/health', 'system-status', (data) => data?.status === 'ok' && data.application === 'TrainingHub', 'Operacional');
+    loadHealth('/api/health/database', 'database-status', (data) => data?.status === 'ok' && data.database === 'connected', 'Conectado');
+  } catch (error) {
+    if (error.status === 401) {
+      location.replace('/login.html');
+      return;
+    }
+    sessionTitle.textContent = error.status === 403 ? 'Acesso indisponível' : 'Não foi possível acessar o painel.';
+    sessionMessage.textContent = error.status === 403 ? 'Sua conta não tem permissão para acessar esta área.'
+      : error.status === 0 ? 'Não foi possível conectar ao TrainingHub.' : 'Tente novamente em instantes.';
+    retrySession.hidden = false;
+    sessionLogout.hidden = false;
+  } finally {
+    sessionState.setAttribute('aria-busy', 'false');
+    checkingSession = false;
+  }
+}
+
+async function endSession() {
+  if (loggingOut || checkingSession) return;
+  loggingOut = true;
+  logoutButton.disabled = sessionLogout.disabled = true;
+  authenticatedApp.hidden = true;
+  sessionState.hidden = false;
+  sessionState.setAttribute('aria-busy', 'true');
+  sessionTitle.textContent = 'Encerrando sessão...';
+  sessionMessage.textContent = 'Aguarde...';
+  retrySession.hidden = true;
+  sessionLogout.hidden = false;
+  try {
+    await logout();
+    location.replace('/login.html');
+  } catch (error) {
+    sessionTitle.textContent = 'Não foi possível sair.';
+    sessionMessage.textContent = error.status === 0 ? 'Não foi possível conectar ao TrainingHub.'
+      : 'Não foi possível sair agora. Tente novamente.';
+    retrySession.hidden = false;
+    sessionMessage.focus();
+  } finally {
+    loggingOut = false;
+    logoutButton.disabled = sessionLogout.disabled = false;
+    sessionState.setAttribute('aria-busy', 'false');
+  }
+}
+
+retrySession.addEventListener('click', checkSession);
+logoutButton.addEventListener('click', endSession);
+sessionLogout.addEventListener('click', endSession);
+window.addEventListener('pagehide', () => { authenticatedApp.hidden = true; });
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) location.reload();
+});
+checkSession();

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Entre no TrainingHub. Sua evolução em um só lugar.">
+  <title>Entrar | TrainingHub</title>
+  <link rel="icon" href="/images/traininghub-logo.png" type="image/png">
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css">
+  <link rel="stylesheet" href="/css/style.css">
+  <script type="module" src="/js/login.js"></script>
+</head>
+<body class="auth-page">
+  <main class="auth-main">
+    <section class="panel auth-card" aria-labelledby="login-title">
+      <div class="auth-brand">
+        <img src="/images/traininghub-logo.png" alt="Logo TrainingHub" width="72" height="72">
+        <p class="auth-name">TrainingHub</p>
+        <p class="auth-slogan">Sua evolução em um só lugar</p>
+      </div>
+      <div class="auth-heading"><p class="eyebrow">BEM-VINDO DE VOLTA</p><h1 id="login-title">Vamos continuar sua evolução?</h1><p>Entre com os dados da sua academia.</p></div>
+      <form id="login-form" method="post" aria-busy="true" novalidate>
+        <div class="mb-3">
+          <label class="form-label" for="academia-code">Código da academia</label>
+          <input class="form-control" id="academia-code" name="academia-code" type="text" inputmode="numeric" pattern="[0-9]+" required aria-describedby="academia-help">
+          <div class="form-text" id="academia-help">Use o código informado pela sua academia.</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="login-email">E-mail</label>
+          <input class="form-control" id="login-email" name="email" type="email" required autocomplete="username">
+        </div>
+        <div class="mb-4">
+          <label class="form-label" for="login-password">Senha</label>
+          <input class="form-control" id="login-password" name="senha" type="password" required autocomplete="current-password">
+        </div>
+        <p class="auth-feedback" id="login-feedback" role="status" aria-live="polite" aria-atomic="true" tabindex="-1">Verificando sessão...</p>
+        <button class="btn btn-primary auth-submit" id="login-submit" type="submit" disabled><span class="spinner-border spinner-border-sm" id="login-spinner" aria-hidden="true"></span><span id="login-submit-text">Aguarde...</span></button>
+      </form>
+      <noscript><p class="alert alert-warning mt-3">Ative o JavaScript para entrar no TrainingHub.</p></noscript>
+    </section>
+    <p class="auth-footer">TrainingHub · Sua evolução em um só lugar</p>
+  </main>
+</body>
+</html>

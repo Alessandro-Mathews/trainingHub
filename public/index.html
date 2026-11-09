@@ -12,6 +12,15 @@
   <script type="module" src="/js/app.js"></script>
 </head>
 <body>
+  <section class="session-gate" id="session-state" aria-labelledby="session-title" aria-busy="true">
+    <div class="panel session-card">
+      <p class="eyebrow">TRAININGHUB</p><h1 id="session-title">Verificando sessão...</h1>
+      <p id="session-message" role="status" aria-live="polite" tabindex="-1">Aguarde para acessar seu painel.</p>
+      <div class="session-actions"><button class="btn btn-primary" id="retry-session" type="button" hidden>Tentar novamente</button><button class="btn btn-outline-secondary" id="session-logout" type="button" hidden>Sair</button></div>
+      <noscript><p class="alert alert-warning">Ative o JavaScript para acessar o TrainingHub.</p></noscript>
+    </div>
+  </section>
+  <div id="authenticated-app" hidden>
   <a class="skip-link" href="#main-content">Pular para o conteúdo</a>
   <aside class="sidebar offcanvas-lg offcanvas-start" tabindex="-1" id="sidebar" aria-labelledby="sidebar-title">
     <div class="offcanvas-header">
@@ -41,7 +50,7 @@
         <button class="menu-toggle btn d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebar" aria-controls="sidebar" aria-label="Abrir menu"><span aria-hidden="true">☰</span></button>
         <span class="context-brand">TrainingHub</span><span class="context-divider" aria-hidden="true">/</span><span id="page-context">Dashboard</span>
       </div>
-      <span class="admin-context">Painel administrativo</span>
+      <div class="topbar-actions"><span class="admin-context">Painel administrativo</span><button class="btn btn-outline-secondary" id="logout-button" type="button">Sair</button></div>
     </header>
 
     <main id="main-content" tabindex="-1">
@@ -73,6 +82,7 @@
       <footer class="content-footer"><span>TrainingHub</span><span>Sua evolução em um só lugar</span></footer>
       <noscript><p class="alert alert-warning">Ative o JavaScript para navegar e consultar os dados do TrainingHub.</p></noscript>
     </main>
+  </div>
   </div>
 </body>
 </html>

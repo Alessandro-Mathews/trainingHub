@@ -71,11 +71,21 @@ export async function loadAcademias() {
       state.hidden = true;
       element('academias-table-container').hidden = false;
     }
-  } catch {
+  } catch (error) {
+    if (error.status === 401) {
+      document.getElementById('authenticated-app').hidden = true;
+      location.replace('/login.html');
+      return;
+    }
+    const forbidden = error.status === 403;
+    element('academias-error').querySelector('h3').textContent = forbidden
+      ? 'Sem permissão para consultar academias.' : 'Não foi possível carregar as academias.';
+    element('academias-error').querySelector('p').textContent = forbidden
+      ? 'Sua conta não tem permissão para acessar esta área.' : 'Verifique sua conexão e tente novamente.';
     state.hidden = true;
     element('academias-error').hidden = false;
-    element('academias-count').textContent = 'Indisponível';
-    element('academias-summary').textContent = 'Não foi possível consultar a listagem';
+    element('academias-count').textContent = forbidden ? 'Sem permissão' : 'Indisponível';
+    element('academias-summary').textContent = forbidden ? 'Sem permissão para consultar academias' : 'Não foi possível consultar a listagem';
   } finally {
     panel.setAttribute('aria-busy', 'false');
     refresh.disabled = false;
