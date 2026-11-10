@@ -15,7 +15,8 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr &)>;
 
 services::AlunoService service()
 {
-    return services::AlunoService{repositories::AlunoRepository{drogon::app().getDbClient("default")}};
+    const auto db = drogon::app().getDbClient("default");
+    return services::AlunoService{repositories::AlunoRepository{db}, repositories::InstrutorRepository{db}};
 }
 
 drogon::HttpResponsePtr message(drogon::HttpStatusCode status, const std::string &text)
@@ -27,9 +28,9 @@ drogon::HttpResponsePtr message(drogon::HttpStatusCode status, const std::string
     return response;
 }
 
-services::AlunoService::ErrorCallback onError(HttpCallback callback)
+services::AlunoService::ErrorCallback onError(HttpCallback callback, bool vinculo = false)
 {
-    return [callback](services::AlunoError error)
+    return [callback, vinculo](services::AlunoError error)
     {
         using services::AlunoError;
         switch (error)
@@ -49,9 +50,14 @@ services::AlunoService::ErrorCallback onError(HttpCallback callback)
         case AlunoError::AlreadyExists:
             callback(message(drogon::k409Conflict, "Usuario ja possui Aluno.")); break;
         case AlunoError::RelationshipConflict:
-            callback(message(drogon::k409Conflict, "Relacionamento indisponivel para criar Aluno.")); break;
+            callback(message(drogon::k409Conflict, vinculo ? "Relacionamento indisponivel para definir instrutor."
+                : "Relacionamento indisponivel para criar Aluno.")); break;
         case AlunoError::Internal:
             callback(message(drogon::k500InternalServerError, "Erro interno ao acessar alunos.")); break;
+        case AlunoError::InstrutorNotFound:
+            callback(message(drogon::k404NotFound, "Instrutor nao encontrado na academia.")); break;
+        case AlunoError::IneligibleInstrutor:
+            callback(message(drogon::k400BadRequest, "Usuario deve estar ativo e possuir perfil Instrutor ativo.")); break;
         }
     };
 }
@@ -110,6 +116,60 @@ bool readContract(const drogon::HttpRequestPtr &req, const HttpCallback &callbac
     }
     return true;
 }
+
+HttpCallback noStore(HttpCallback callback)
+{
+    return [callback = std::move(callback)](const drogon::HttpResponsePtr &response)
+    {
+        response->addHeader("Cache-Control", "no-store");
+        callback(response);
+    };
+}
+
+drogon::HttpResponsePtr responsavelJson(const std::optional<std::int64_t> &instrutorId)
+{
+    Json::Value json;
+    json["instrutor_id"] = instrutorId ? Json::Value(Json::Int64(*instrutorId)) : Json::Value(Json::nullValue);
+    return drogon::HttpResponse::newHttpJsonResponse(json);
+}
+}
+
+void AlunoController::buscarInstrutor(const drogon::HttpRequestPtr &req, HttpCallback &&callback,
+    const std::string &textId)
+{
+    callback = noStore(std::move(callback));
+    if (!security::AuthorizationGuard::require(req, security::Operation::AlunosInstrutorRead, callback)) return;
+    if (!readContract(req, callback)) return;
+    const auto id = positiveId(textId);
+    if (!id) { callback(message(drogon::k400BadRequest, "Informe id positivo de 64 bits.")); return; }
+    service().buscarInstrutor(security::AuthorizationGuard::context(req), *id,
+        [callback](const std::optional<std::int64_t> &instrutorId) { callback(responsavelJson(instrutorId)); },
+        onError(callback, true));
+}
+
+void AlunoController::definirInstrutor(const drogon::HttpRequestPtr &req, HttpCallback &&callback,
+    const std::string &textId)
+{
+    callback = noStore(std::move(callback));
+    if (!security::AuthorizationGuard::require(req, security::Operation::AlunosInstrutorManage, callback)) return;
+    const auto id = positiveId(textId);
+    const auto json = strictJson(req);
+    if (!id || !req->query().empty() || !json || !json->isObject() || json->size() != 1
+        || !json->isMember("instrutor_id"))
+    {
+        callback(message(drogon::k400BadRequest, "Informe id positivo e somente instrutor_id no objeto JSON, sem query."));
+        return;
+    }
+    const auto &instrutorId = (*json)["instrutor_id"];
+    if ((instrutorId.type() != Json::intValue && instrutorId.type() != Json::uintValue)
+        || !instrutorId.isInt64() || instrutorId.asInt64() <= 0)
+    {
+        callback(message(drogon::k400BadRequest, "Informe instrutor_id inteiro positivo de 64 bits."));
+        return;
+    }
+    service().definirInstrutor(security::AuthorizationGuard::context(req), *id, instrutorId.asInt64(),
+        [callback](const std::optional<std::int64_t> &saved) { callback(responsavelJson(saved)); },
+        onError(callback, true));
 }
 
 void AlunoController::criar(const drogon::HttpRequestPtr &req, HttpCallback &&callback)

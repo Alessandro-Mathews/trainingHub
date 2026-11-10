@@ -29,9 +29,67 @@ auto mapOne(AlunoRepository::FindCallback callback, AlunoRepository::ErrorCallba
         callback(aluno);
     };
 }
+
+auto mapResponsavel(AlunoRepository::ResponsavelCallback callback,
+                    AlunoRepository::ErrorCallback errorCallback)
+{
+    return [callback = std::move(callback), errorCallback](const drogon::orm::Result &result)
+    {
+        std::optional<InstrutorResponsavel> responsavel;
+        try
+        {
+            if (!result.empty())
+            {
+                responsavel.emplace();
+                if (!result[0]["instrutor_id"].isNull())
+                    responsavel->instrutorId = result[0]["instrutor_id"].as<std::int64_t>();
+                responsavel->consistente = result[0]["consistente"].as<int>() == 1;
+            }
+        }
+        catch (...)
+        {
+            errorCallback(drogon::orm::ConversionError("Failed to map Aluno instructor relationship"));
+            return;
+        }
+        callback(responsavel);
+    };
+}
 }
 
 AlunoRepository::AlunoRepository(const drogon::orm::DbClientPtr &db) : db_(db) {}
+
+void AlunoRepository::buscarInstrutor(std::int64_t academiaId, std::int64_t alunoId,
+    ResponsavelCallback callback, ErrorCallback errorCallback) const
+{
+    // Preserve administrative reads, but never expose an orphaned or foreign-tenant ID.
+    db_->execSqlAsync(
+        "SELECT al.instrutor_id, (al.instrutor_id IS NULL OR EXISTS ("
+        "SELECT 1 FROM instrutor i JOIN usuario ui ON ui.id = i.usuario_id "
+        "WHERE i.id = al.instrutor_id AND ui.academia_id = u.academia_id)) AS consistente "
+        "FROM aluno al JOIN usuario u ON u.id = al.usuario_id "
+        "WHERE u.academia_id = ? AND al.id = ?",
+        mapResponsavel(std::move(callback), errorCallback), errorCallback, academiaId, alunoId);
+}
+
+void AlunoRepository::definirInstrutor(std::int64_t academiaId, std::int64_t alunoId,
+    std::int64_t instrutorId, const std::string &perfilAluno, const std::string &perfilInstrutor,
+    ResponsavelCallback callback, ErrorCallback errorCallback) const
+{
+    // Recheck both targets in the atomic write; earlier service reads can become stale.
+    db_->execSqlAsync(
+        "UPDATE aluno SET instrutor_id = ? WHERE id = ? AND EXISTS ("
+        "SELECT 1 FROM usuario u JOIN perfil p ON p.id = u.perfil_id "
+        "JOIN academia a ON a.id = u.academia_id "
+        "WHERE u.id = aluno.usuario_id AND u.academia_id = ? "
+        "AND u.ativo = 1 AND p.ativo = 1 AND p.nome = ? AND a.ativo = 1) "
+        "AND EXISTS (SELECT 1 FROM instrutor i JOIN usuario u ON u.id = i.usuario_id "
+        "JOIN perfil p ON p.id = u.perfil_id JOIN academia a ON a.id = u.academia_id "
+        "WHERE i.id = ? AND u.academia_id = ? "
+        "AND u.ativo = 1 AND p.ativo = 1 AND p.nome = ? AND a.ativo = 1) "
+        "RETURNING instrutor_id, 1 AS consistente",
+        mapResponsavel(std::move(callback), errorCallback), errorCallback,
+        instrutorId, alunoId, academiaId, perfilAluno, instrutorId, academiaId, perfilInstrutor);
+}
 
 void AlunoRepository::buscarUsuarioParaCriacao(std::int64_t academiaId, std::int64_t usuarioId,
     UsuarioCallback callback, ErrorCallback errorCallback) const

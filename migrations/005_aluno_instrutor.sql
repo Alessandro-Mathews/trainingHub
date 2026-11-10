@@ -1,0 +1,5 @@
+ALTER TABLE aluno
+ADD COLUMN instrutor_id INTEGER
+    REFERENCES instrutor(id)
+    ON DELETE RESTRICT
+    ON UPDATE RESTRICT;
