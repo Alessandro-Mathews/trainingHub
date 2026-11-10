@@ -8,6 +8,22 @@ namespace traininghub::services
 {
 namespace
 {
+bool authorize(const security::ValidatedAuthContext &actor, security::Operation operation,
+               const UsuarioService::ErrorCallback &errorCallback)
+{
+    if (actor.identity.userId <= 0 || actor.identity.academiaId <= 0 || actor.identity.perfilId <= 0)
+    {
+        errorCallback(UsuarioError::Unauthorized);
+        return false;
+    }
+    if (!security::AuthorizationService::allows(actor.role, operation))
+    {
+        errorCallback(UsuarioError::Forbidden);
+        return false;
+    }
+    return true;
+}
+
 bool validEmail(const std::string &email)
 {
     const auto at = email.find('@');
@@ -36,6 +52,34 @@ UsuarioService::UsuarioService(repositories::UsuarioRepository usuarios,
                                repositories::PerfilRepository perfis)
     : usuarios_(std::move(usuarios)), academias_(std::move(academias)), perfis_(std::move(perfis))
 {
+}
+
+void UsuarioService::atualizar(const security::ValidatedAuthContext &actor, std::int64_t id,
+    const DadosUsuario &input, FindCallback callback, ErrorCallback errorCallback) const
+{
+    if (!authorize(actor, security::Operation::UsuariosUpdate, errorCallback)) return;
+    if (id <= 0 || input.nome.find_first_not_of(" \t\r\n\f\v") == std::string::npos || !validEmail(input.email))
+    { errorCallback(UsuarioError::InvalidUpdate); return; }
+    usuarios_.atualizar(actor.identity.academiaId, id, input.nome, input.email,
+        [callback, errorCallback](const std::optional<models::Usuario> &saved)
+        {
+            if (saved) callback(*saved);
+            else errorCallback(UsuarioError::NotFound);
+        }, databaseError(errorCallback));
+}
+
+void UsuarioService::atualizarStatus(const security::ValidatedAuthContext &actor, std::int64_t id,
+    const StatusUsuario &input, FindCallback callback, ErrorCallback errorCallback) const
+{
+    if (!authorize(actor, security::Operation::UsuariosManageStatus, errorCallback)) return;
+    if (id <= 0) { errorCallback(UsuarioError::InvalidUpdate); return; }
+    if (!input.ativo && id == actor.identity.userId) { errorCallback(UsuarioError::Forbidden); return; }
+    usuarios_.atualizarStatus(actor.identity.academiaId, id, input.ativo, actor.identity.userId,
+        [callback, errorCallback](const std::optional<models::Usuario> &saved)
+        {
+            if (saved) callback(*saved);
+            else errorCallback(UsuarioError::NotFound);
+        }, databaseError(errorCallback));
 }
 
 void UsuarioService::criar(const security::ValidatedAuthContext &actor,

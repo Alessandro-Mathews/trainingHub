@@ -26,6 +26,10 @@ public:
                      FindCallback callback, ErrorCallback errorCallback) const;
     void listarPorAcademia(std::int64_t academiaId, ListCallback callback,
                            ErrorCallback errorCallback) const;
+    void atualizar(std::int64_t academiaId, std::int64_t id, const std::string &nome,
+                   const std::string &email, FindCallback callback, ErrorCallback errorCallback) const;
+    void atualizarStatus(std::int64_t academiaId, std::int64_t id, bool ativo,
+                         std::int64_t actorId, FindCallback callback, ErrorCallback errorCallback) const;
 
     void findByAcademiaAndEmail(std::int64_t academiaId,
                                const std::string &email,

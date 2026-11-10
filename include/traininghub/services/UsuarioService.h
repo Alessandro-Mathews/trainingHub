@@ -10,7 +10,8 @@ namespace traininghub::services
 enum class UsuarioError
 {
     InvalidInput, NotFound, AcademiaNotFound, AcademiaInactive,
-    PerfilNotFound, PerfilInactive, DuplicateEmail, RelationshipConflict, Forbidden, Internal
+    PerfilNotFound, PerfilInactive, DuplicateEmail, RelationshipConflict, Forbidden, Internal, Unauthorized,
+    InvalidUpdate
 };
 
 struct NovoUsuario
@@ -20,6 +21,17 @@ struct NovoUsuario
     std::string nome;
     std::string email;
     std::string senha;
+};
+
+struct DadosUsuario
+{
+    std::string nome;
+    std::string email;
+};
+
+struct StatusUsuario
+{
+    bool ativo{};
 };
 
 class UsuarioService
@@ -38,6 +50,10 @@ public:
                      FindCallback callback, ErrorCallback errorCallback) const;
     void listarPorAcademia(std::int64_t academiaId, ListCallback callback,
                            ErrorCallback errorCallback) const;
+    void atualizar(const security::ValidatedAuthContext &actor, std::int64_t id,
+                   const DadosUsuario &input, FindCallback callback, ErrorCallback errorCallback) const;
+    void atualizarStatus(const security::ValidatedAuthContext &actor, std::int64_t id,
+                         const StatusUsuario &input, FindCallback callback, ErrorCallback errorCallback) const;
 
 private:
     repositories::UsuarioRepository usuarios_;

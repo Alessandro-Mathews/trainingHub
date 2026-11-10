@@ -121,7 +121,8 @@ def run():
                         ("GET", "/api/perfis"), ("GET", "/api/perfis/1"), ("POST", "/api/perfis"),
                         ("PUT", "/api/perfis/1"), ("DELETE", "/api/perfis/1"),
                         ("GET", "/api/usuarios?academia_id=1"), ("GET", "/api/usuarios/10?academia_id=1"),
-                        ("POST", "/api/usuarios")]
+                        ("POST", "/api/usuarios"), ("PUT", "/api/usuarios/999999"),
+                        ("PUT", "/api/usuarios/999999/status")]
                     for method, path in protected:
                         request(method, path, expected=401)
                     request("GET", "/api/health/database")
@@ -145,6 +146,13 @@ def run():
                         request("GET", "/api/perfis/1", client=client)
                         request("GET", "/api/usuarios?academia_id=1", client=client)
                         request("GET", f"/api/usuarios/{actors['Aluno']}?academia_id=1", client=client)
+                        target = actors["Aluno"]
+                        request("PUT", f"/api/usuarios/{target}",
+                            {"nome": "Atualizado", "email": "Aluno@example.test"}, client=client)
+                        request("PUT", f"/api/usuarios/{target}/status", {"ativo": True}, client=client)
+                        request("PUT", "/api/usuarios/200", {"nome": "Externo", "email": "other@example.test"},
+                            404, client)
+                        request("PUT", "/api/usuarios/200/status", {"ativo": False}, 404, client)
                     for method, path in protected:
                         if path.startswith("/api/perfis") and method != "GET" or path == "/api/academias":
                             request(method, path, expected=403, client=gestor)
@@ -271,6 +279,8 @@ def run():
                     expired, _ = login()
                     time.sleep(4)
                     request("GET", "/api/auth/me", expected=401, client=expired)
+                    request("PUT", "/api/usuarios/999999", {"nome": "A", "email": "a@b"}, 401, expired)
+                    request("PUT", "/api/usuarios/999999/status", {"ativo": False}, 401, expired)
                 finally:
                     server.terminate()
                     try:
