@@ -37,7 +37,74 @@ repositories::AlunoRepository::ErrorCallback databaseError(AlunoService::ErrorCa
 }
 }
 
-AlunoService::AlunoService(repositories::AlunoRepository repository) : repository_(std::move(repository)) {}
+AlunoService::AlunoService(repositories::AlunoRepository repository,
+    repositories::InstrutorRepository instrutores)
+    : repository_(std::move(repository)), instrutores_(std::move(instrutores)) {}
+
+void AlunoService::buscarInstrutor(const security::ValidatedAuthContext &actor, std::int64_t alunoId,
+    ResponsavelCallback callback, ErrorCallback errorCallback) const
+{
+    if (!authorize(actor, security::Operation::AlunosInstrutorRead, errorCallback)) return;
+    if (alunoId <= 0) { errorCallback(AlunoError::InvalidInput); return; }
+    repository_.buscarInstrutor(actor.identity.academiaId, alunoId,
+        [callback, errorCallback](const std::optional<repositories::InstrutorResponsavel> &responsavel)
+        {
+            if (!responsavel) errorCallback(AlunoError::NotFound);
+            else if (!responsavel->consistente) errorCallback(AlunoError::InstrutorNotFound);
+            else callback(responsavel->instrutorId);
+        }, databaseError(errorCallback));
+}
+
+void AlunoService::definirInstrutor(const security::ValidatedAuthContext &actor, std::int64_t alunoId,
+    std::int64_t instrutorId, ResponsavelCallback callback, ErrorCallback errorCallback) const
+{
+    if (!authorize(actor, security::Operation::AlunosInstrutorManage, errorCallback)) return;
+    if (alunoId <= 0 || instrutorId <= 0) { errorCallback(AlunoError::InvalidInput); return; }
+    const auto academiaId = actor.identity.academiaId;
+    repository_.buscarPorId(academiaId, alunoId,
+        [academiaId, alunoId, instrutorId, callback, errorCallback,
+         repository = repository_, instrutores = instrutores_](const std::optional<models::Aluno> &aluno)
+        {
+            if (!aluno) { errorCallback(AlunoError::NotFound); return; }
+            repository.buscarUsuarioParaCriacao(academiaId, aluno->usuario_id,
+                [academiaId, alunoId, instrutorId, callback, errorCallback, repository, instrutores]
+                (const std::optional<repositories::UsuarioParaAluno> &usuario)
+                {
+                    if (!usuario) { errorCallback(AlunoError::NotFound); return; }
+                    if (!usuario->academiaAtiva) { errorCallback(AlunoError::RelationshipConflict); return; }
+                    if (!usuario->usuarioAtivo || !usuario->perfilAtivo || !usuario->perfilNome
+                        || security::roleFromName(*usuario->perfilNome) != security::Role::ALUNO)
+                    { errorCallback(AlunoError::IneligibleUsuario); return; }
+                    instrutores.buscarPorId(academiaId, instrutorId,
+                        [academiaId, alunoId, instrutorId, callback, errorCallback, repository,
+                         instrutores, perfilAluno = *usuario->perfilNome]
+                        (const std::optional<models::Instrutor> &instrutor)
+                        {
+                            if (!instrutor) { errorCallback(AlunoError::InstrutorNotFound); return; }
+                            instrutores.buscarUsuarioParaCriacao(academiaId, instrutor->usuario_id,
+                                [academiaId, alunoId, instrutorId, callback, errorCallback, repository, perfilAluno]
+                                (const std::optional<repositories::UsuarioParaInstrutor> &usuarioInstrutor)
+                                {
+                                    if (!usuarioInstrutor) { errorCallback(AlunoError::InstrutorNotFound); return; }
+                                    if (!usuarioInstrutor->academiaAtiva)
+                                    { errorCallback(AlunoError::RelationshipConflict); return; }
+                                    if (!usuarioInstrutor->usuarioAtivo || !usuarioInstrutor->perfilAtivo
+                                        || !usuarioInstrutor->perfilNome
+                                        || security::roleFromName(*usuarioInstrutor->perfilNome) != security::Role::INSTRUTOR)
+                                    { errorCallback(AlunoError::IneligibleInstrutor); return; }
+                                    repository.definirInstrutor(academiaId, alunoId, instrutorId,
+                                        perfilAluno, *usuarioInstrutor->perfilNome,
+                                        [callback, errorCallback]
+                                        (const std::optional<repositories::InstrutorResponsavel> &saved)
+                                        {
+                                            if (saved) callback(saved->instrutorId);
+                                            else errorCallback(AlunoError::RelationshipConflict);
+                                        }, databaseError(errorCallback));
+                                }, databaseError(errorCallback));
+                        }, databaseError(errorCallback));
+                }, databaseError(errorCallback));
+        }, databaseError(errorCallback));
+}
 
 void AlunoService::criar(const security::ValidatedAuthContext &actor, std::int64_t usuarioId,
     FindCallback callback, ErrorCallback errorCallback) const
