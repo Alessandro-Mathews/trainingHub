@@ -6,7 +6,7 @@ namespace traininghub::repositories
 {
 namespace
 {
-models::Usuario fromRow(const drogon::orm::Row &row)
+models::Usuario publicFromRow(const drogon::orm::Row &row)
 {
     models::Usuario user;
     user.id = row["id"].as<std::int64_t>();
@@ -14,20 +14,27 @@ models::Usuario fromRow(const drogon::orm::Row &row)
     user.perfil_id = row["perfil_id"].as<std::int64_t>();
     user.nome = row["nome"].as<std::string>();
     user.email = row["email"].as<std::string>();
-    user.senha_hash = row["senha_hash"].as<std::string>();
     user.ativo = row["ativo"].as<int>() != 0;
     user.criado_em = row["criado_em"].as<std::string>();
     return user;
 }
 
-auto mapOne(UsuarioRepository::FindCallback callback, UsuarioRepository::ErrorCallback errorCallback)
+models::Usuario fromRow(const drogon::orm::Row &row)
 {
-    return [callback = std::move(callback), errorCallback](const drogon::orm::Result &result)
+    auto user = publicFromRow(row);
+    user.senha_hash = row["senha_hash"].as<std::string>();
+    return user;
+}
+
+auto mapOne(UsuarioRepository::FindCallback callback, UsuarioRepository::ErrorCallback errorCallback,
+            bool publicOnly = false)
+{
+    return [callback = std::move(callback), errorCallback, publicOnly](const drogon::orm::Result &result)
     {
         std::optional<models::Usuario> user;
         try
         {
-            if (!result.empty()) user = fromRow(result[0]);
+            if (!result.empty()) user = publicOnly ? publicFromRow(result[0]) : fromRow(result[0]);
         }
         catch (...)
         {
@@ -42,6 +49,27 @@ auto mapOne(UsuarioRepository::FindCallback callback, UsuarioRepository::ErrorCa
 UsuarioRepository::UsuarioRepository(const drogon::orm::DbClientPtr &db)
     : db_(db)
 {
+}
+
+void UsuarioRepository::atualizar(std::int64_t academiaId, std::int64_t id,
+    const std::string &nome, const std::string &email, FindCallback callback, ErrorCallback errorCallback) const
+{
+    // Tenant and UNIQUE are enforced by this single atomic write.
+    db_->execSqlAsync(
+        "UPDATE usuario SET nome = ?, email = ? WHERE id = ? AND academia_id = ? "
+        "RETURNING id, academia_id, perfil_id, nome, email, ativo, criado_em",
+        mapOne(std::move(callback), errorCallback, true), errorCallback, nome, email, id, academiaId);
+}
+
+void UsuarioRepository::atualizarStatus(std::int64_t academiaId, std::int64_t id,
+    bool ativo, std::int64_t actorId, FindCallback callback, ErrorCallback errorCallback) const
+{
+    // Keep the self-deactivation guard in SQL as well as in the service.
+    const int active = ativo ? 1 : 0;
+    db_->execSqlAsync(
+        "UPDATE usuario SET ativo = ? WHERE id = ? AND academia_id = ? AND (? = 1 OR id <> ?) "
+        "RETURNING id, academia_id, perfil_id, nome, email, ativo, criado_em",
+        mapOne(std::move(callback), errorCallback, true), errorCallback, active, id, academiaId, active, actorId);
 }
 
 void UsuarioRepository::findByAcademiaAndEmail(

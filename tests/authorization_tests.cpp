@@ -13,13 +13,14 @@ int main()
         const std::array operations{Operation::ContextRead, Operation::AcademiasRead,
             Operation::PerfisRead, Operation::PerfisManage, Operation::UsuariosRead, Operation::UsuariosCreate,
             Operation::AlunosCreate, Operation::AlunosRead, Operation::InstrutoresCreate, Operation::InstrutoresRead,
-            Operation::AlunosInstrutorRead, Operation::AlunosInstrutorManage};
-        const bool access[5][12] = {
-            {false, false, false, false, false, false, false, false, false, false, false, false},
-            {true, true, true, true, true, true, true, true, true, true, true, true},
-            {true, false, true, false, true, true, true, true, true, true, true, true},
-            {true, false, false, false, false, false, false, false, false, false, false, false},
-            {true, false, false, false, false, false, false, false, false, false, false, false}
+            Operation::AlunosInstrutorRead, Operation::AlunosInstrutorManage,
+            Operation::UsuariosUpdate, Operation::UsuariosManageStatus};
+        const bool access[5][14] = {
+            {false, false, false, false, false, false, false, false, false, false, false, false, false, false},
+            {true, true, true, true, true, true, true, true, true, true, true, true, true, true},
+            {true, false, true, false, true, true, true, true, true, true, true, true, true, true},
+            {true, false, false, false, false, false, false, false, false, false, false, false, false, false},
+            {true, false, false, false, false, false, false, false, false, false, false, false, false, false}
         };
         const bool assignments[5][5] = {
             {false, false, false, false, false},

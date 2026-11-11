@@ -4,6 +4,7 @@
 
 #include <drogon/drogon.h>
 #include <charconv>
+#include <memory>
 #include <optional>
 #include <string_view>
 
@@ -56,6 +57,10 @@ services::UsuarioService::ErrorCallback onError(HttpCallback callback)
             callback(message(drogon::k500InternalServerError, "Erro interno ao acessar usuarios.")); break;
         case UsuarioError::Forbidden:
             callback(security::AuthorizationGuard::error(drogon::k403Forbidden)); break;
+        case UsuarioError::Unauthorized:
+            callback(security::AuthorizationGuard::error(drogon::k401Unauthorized)); break;
+        case UsuarioError::InvalidUpdate:
+            callback(message(drogon::k400BadRequest, "Informe id positivo, nome nao vazio e email valido.")); break;
         }
     };
 }
@@ -88,6 +93,40 @@ std::optional<std::int64_t> positiveId(const std::string &text)
     return id;
 }
 
+std::optional<Json::Value> strictJson(const drogon::HttpRequestPtr &req)
+{
+    if (req->contentType() != drogon::CT_APPLICATION_JSON
+        && req->getHeader("content-type").find("application/json") == std::string::npos)
+        return std::nullopt;
+    const auto body = req->body();
+    if (body.empty()) return std::nullopt;
+    Json::CharReaderBuilder builder;
+    Json::CharReaderBuilder::ecma404Mode(&builder.settings_);
+    builder["collectComments"] = false;
+    builder["stackLimit"] = static_cast<Json::UInt>(drogon::app().getJsonParserStackLimit());
+    const std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
+    Json::Value json;
+    Json::String errors;
+    try
+    {
+        if (!reader->parse(body.data(), body.data() + body.size(), &json, &errors)) return std::nullopt;
+    }
+    catch (const Json::Exception &)
+    {
+        return std::nullopt;
+    }
+    return json;
+}
+
+HttpCallback noStore(HttpCallback callback)
+{
+    return [callback = std::move(callback)](const drogon::HttpResponsePtr &response)
+    {
+        response->addHeader("Cache-Control", "no-store");
+        callback(response);
+    };
+}
+
 std::optional<std::int64_t> academiaIdFromQuery(const drogon::HttpRequestPtr &req)
 {
     // query() excludes the body; getParameter() also parses form body data.
@@ -112,6 +151,44 @@ std::optional<std::int64_t> academiaIdFromQuery(const drogon::HttpRequestPtr &re
     }
     return id;
 }
+}
+
+void UsuarioController::atualizar(const drogon::HttpRequestPtr &req, HttpCallback &&callback,
+    const std::string &textId)
+{
+    callback = noStore(std::move(callback));
+    if (!security::AuthorizationGuard::require(req, security::Operation::UsuariosUpdate, callback)) return;
+    const auto id = positiveId(textId);
+    const auto json = strictJson(req);
+    if (!id || !req->query().empty() || !json || !json->isObject() || json->size() != 2
+        || !json->isMember("nome") || !json->isMember("email")
+        || !(*json)["nome"].isString() || !(*json)["email"].isString())
+    {
+        callback(message(drogon::k400BadRequest, "Informe id positivo e somente nome e email strings, sem query."));
+        return;
+    }
+    service().atualizar(security::AuthorizationGuard::context(req), *id,
+        {(*json)["nome"].asString(), (*json)["email"].asString()},
+        [callback](const models::Usuario &saved) { callback(drogon::HttpResponse::newHttpJsonResponse(toJson(saved))); },
+        onError(callback));
+}
+
+void UsuarioController::atualizarStatus(const drogon::HttpRequestPtr &req, HttpCallback &&callback,
+    const std::string &textId)
+{
+    callback = noStore(std::move(callback));
+    if (!security::AuthorizationGuard::require(req, security::Operation::UsuariosManageStatus, callback)) return;
+    const auto id = positiveId(textId);
+    const auto json = strictJson(req);
+    if (!id || !req->query().empty() || !json || !json->isObject() || json->size() != 1
+        || !json->isMember("ativo") || !(*json)["ativo"].isBool())
+    {
+        callback(message(drogon::k400BadRequest, "Informe id positivo e somente ativo boolean, sem query."));
+        return;
+    }
+    service().atualizarStatus(security::AuthorizationGuard::context(req), *id, {(*json)["ativo"].asBool()},
+        [callback](const models::Usuario &saved) { callback(drogon::HttpResponse::newHttpJsonResponse(toJson(saved))); },
+        onError(callback));
 }
 
 void UsuarioController::criar(const drogon::HttpRequestPtr &req, HttpCallback &&callback)
