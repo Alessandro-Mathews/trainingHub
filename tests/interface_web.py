@@ -89,7 +89,7 @@ for (const value of ['1', '10', '9007199254740993', '9223372036854775807']) {
 const calls = [];
 globalThis.fetch = async (url, options) => {
   calls.push({ url, options });
-  return { ok: true, json: async () => ({ userId: 1, academiaId: 1, perfilId: 17 }) };
+  return new Response('{"userId":1,"academiaId":1,"perfilId":17}');
 };
 const bodies = [];
 for (const code of invalidCodes) {
@@ -144,7 +144,7 @@ for (const failure of bodyFailures) {
 globalThis.fetch = async () => new Response('{invalid JSON', { status: 200 });
 await assert.rejects(api.getJson('/api/health'),
   (error) => error.status === 502 && error.message === 'Request failed');
-globalThis.fetch = async () => ({ ok: true, json: async () => ({}) });
+globalThis.fetch = async () => new Response('{}');
 await assert.rejects(api.getAuthContext(), (error) => error.status === 502);
 // Exercise the delivered page modules with a small DOM double. These checks
 // cover state transitions, not browser rendering, accessibility APIs or layout.
@@ -183,7 +183,7 @@ function pageFixture() {
 }
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const identity = { userId: 1, academiaId: 1, perfilId: 17 };
-const response = (status, data = identity) => ({ ok: status < 400, status, json: async () => data });
+const response = (status, data = identity) => new Response(JSON.stringify(data), { status });
 const apiURL = 'data:text/javascript;base64,' + Buffer.from(source).toString('base64');
 let pageSequence = 0;
 async function pageModule(name, replaceAcademias = false) {
@@ -191,6 +191,8 @@ async function pageModule(name, replaceAcademias = false) {
   if (replaceAcademias) {
     const stub = 'data:text/javascript,export function loadAcademias(){globalThis.academiaLoads++;}';
     text = text.replace("'./academias.js'", JSON.stringify(stub));
+    const alunosStub = 'data:text/javascript,export function initAlunos(){};export function visitAlunos(){}';
+    text = text.replace("'./alunos.js'", JSON.stringify(alunosStub));
   }
   return import('data:text/javascript;base64,' + Buffer.from(text).toString('base64') + '#' + pageSequence++);
 }
@@ -305,6 +307,10 @@ def run(browser):
     env = dict(os.environ)
     env["PATH"] = str(ROOT / "build") + os.pathsep + env["PATH"]
     check_login_markup()
+    index = LoginMarkup()
+    index.feed((ROOT / "public/index.html").read_text(encoding="utf-8"))
+    assert index.elements["alunos"][0] == "section"
+    assert "#alunos" in index.assets
     serialized_bodies = check_api_javascript(env)
     encoded = subprocess.check_output(
         [str(ROOT / "build" / "security-tests" / "security_tests.exe"), "--fixture-hash"],
@@ -335,6 +341,10 @@ def run(browser):
                 db.execute("INSERT INTO academia (id,nome) VALUES (?,?)", (academy, name))
                 db.execute("INSERT INTO usuario (academia_id,perfil_id,nome,email,senha_hash) VALUES (?,17,'Admin','interface@example.test',?)",
                            (academy, encoded))
+            for migration in sorted((ROOT / "migrations").glob("*.sql")):
+                if migration.name != "001_initial_schema.sql":
+                    db.executescript(migration.read_text(encoding="utf-8"))
+            db.execute("INSERT INTO aluno(usuario_id) SELECT id FROM usuario WHERE email='aluno@example.test' AND academia_id=1")
             db.commit()
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", 0))
@@ -390,6 +400,7 @@ def run(browser):
                     ("/css/style.css", "text/css"), ("/js/app.js", "application/javascript"),
                     ("/js/api.js", "application/javascript"), ("/js/academias.js", "application/javascript"),
                     ("/js/login.js", "application/javascript"),
+                    ("/js/alunos.js", "application/javascript"),
                     ("/vendor/bootstrap/bootstrap.min.css", "text/css"),
                     ("/vendor/bootstrap/bootstrap.bundle.min.js", "application/javascript"),
                     ("/images/traininghub-logo.png", "image/png"),

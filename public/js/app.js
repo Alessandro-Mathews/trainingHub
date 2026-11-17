@@ -1,7 +1,9 @@
 import { getJson, getAuthContext, logout } from './api.js';
 import { loadAcademias } from './academias.js';
+import { initAlunos, visitAlunos } from './alunos.js';
 
-const pages = ['dashboard', 'academias'];
+const pages = ['dashboard', 'academias', 'alunos'];
+let authContext = null;
 
 function navigate(moveFocus = true) {
   const requested = location.hash.slice(1);
@@ -13,7 +15,7 @@ function navigate(moveFocus = true) {
     if (active) link.setAttribute('aria-current', 'page');
     else link.removeAttribute('aria-current');
   }
-  const title = page === 'dashboard' ? 'Dashboard' : 'Academias';
+  const title = { dashboard: 'Dashboard', academias: 'Academias', alunos: 'Alunos' }[page];
   document.getElementById('page-context').textContent = title;
   document.title = `${title} | TrainingHub`;
   const sidebar = document.getElementById('sidebar');
@@ -23,6 +25,7 @@ function navigate(moveFocus = true) {
     if (moveFocus) sidebar.addEventListener('hidden.bs.offcanvas', focusContent, { once: true });
     drawer.hide();
   } else if (moveFocus) focusContent();
+  if (page === 'alunos' && authContext) visitAlunos();
 }
 
 async function loadHealth(path, id, healthy, label) {
@@ -76,9 +79,11 @@ async function checkSession() {
   retrySession.hidden = true;
   sessionLogout.hidden = true;
   try {
-    await getAuthContext();
+    authContext = await getAuthContext();
+    initAlunos(authContext);
     sessionState.hidden = true;
     authenticatedApp.hidden = false;
+    if (location.hash === '#alunos') visitAlunos();
     loadAcademias();
     loadHealth('/api/health', 'system-status', (data) => data?.status === 'ok' && data.application === 'TrainingHub', 'Operacional');
     loadHealth('/api/health/database', 'database-status', (data) => data?.status === 'ok' && data.database === 'connected', 'Conectado');

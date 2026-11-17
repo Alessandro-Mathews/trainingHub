@@ -1,4 +1,4 @@
-import { getJson } from './api.js';
+import { getJson, parseId } from './api.js';
 
 const element = (id) => document.getElementById(id);
 let loading = false;
@@ -56,7 +56,7 @@ export async function loadAcademias() {
   try {
     const academias = await getJson('/api/academias');
     if (!Array.isArray(academias) || academias.some((item) =>
-      item === null || typeof item !== 'object' || !Number.isInteger(item.id) ||
+      item === null || typeof item !== 'object' || parseId(item.id) === null ||
       typeof item.nome !== 'string' || typeof item.ativo !== 'boolean')) {
       throw new Error('Invalid response');
     }
