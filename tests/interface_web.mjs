@@ -66,8 +66,8 @@ try {
     throw new Error(`Timed out: ${expression}`);
   }
   async function click(selector) { await evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`); }
-  async function viewport(width) {
-    await call('Emulation.setDeviceMetricsOverride', { width, height: 1000, deviceScaleFactor: 1, mobile: false });
+  async function viewport(width, height = 1000) {
+    await call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
   }
   const screenshotDirectory = path.resolve('build/th21-screenshots');
   await mkdir(screenshotDirectory, { recursive: true });
@@ -309,6 +309,89 @@ try {
   await evaluate(`location.hash = 'unknown'`);
   await until(`!document.querySelector('#dashboard').hidden`);
   assert.equal(await evaluate(`document.querySelectorAll('[aria-current="page"]').length`), 1);
+
+  // TH-31 exercises the delivered modules against this suite's isolated server.
+  await call('Page.navigate', { url: `${base}/index.html#alunos` });
+  await until(`!document.querySelector('#alunos-table-container').hidden && !document.querySelector('#create-aluno').disabled`);
+  assert.equal(await evaluate('document.title'), 'Alunos | TrainingHub');
+  for (const [width, height] of [[1440, 1000], [375, 812]]) {
+    await viewport(width, height);
+    assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
+    await screenshot(`alunos-${width}`);
+    await click('#create-aluno');
+    await until(`document.querySelector('#aluno-create-modal').classList.contains('show') && document.activeElement.id === 'aluno-create-mode'`);
+    assert.equal(await evaluate(`document.querySelector('#aluno-create-modal').scrollWidth <= innerWidth`), true);
+    await screenshot(`alunos-cadastro-${width}`);
+    await call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await until(`!document.querySelector('.modal-backdrop') && document.activeElement.id === 'create-aluno'`);
+  }
+  await click('#create-aluno');
+  await until(`document.activeElement.id === 'aluno-create-mode'`);
+  await evaluate(`(() => {
+    document.querySelector('#aluno-create-name').value = 'Aluno com nome longo para validar cadastro e responsividade';
+    document.querySelector('#aluno-create-email').value = 'aluno.th31.browser@example.test';
+    document.querySelector('#aluno-create-password').value = 'TH31-browser-password';
+  })()`);
+  await click('#aluno-create-submit');
+  await until(`!document.querySelector('.modal-backdrop') && document.querySelector('#alunos-rows').children.length === 2`);
+  assert.equal(await evaluate(`document.querySelector('#aluno-create-password').value`), '');
+  await click('#alunos-rows tr:last-child button:first-child');
+  await until(`document.activeElement.id === 'aluno-edit-name'`);
+  const maliciousName = '<img src=x onerror="window.th31Injected=true"> Nome longo para validação';
+  await evaluate(`document.querySelector('#aluno-edit-name').value = ${JSON.stringify(maliciousName)}`);
+  await screenshot('alunos-edicao-375');
+  await click('#aluno-edit-submit');
+  await until(`!document.querySelector('.modal-backdrop') && document.querySelector('#alunos-rows').textContent.includes(${JSON.stringify(maliciousName)})`);
+  assert.equal(await evaluate(`document.querySelector('#alunos-rows img') === null && window.th31Injected !== true`), true);
+  await click('#alunos-rows tr:last-child button:last-child');
+  await until(`document.activeElement.id === 'aluno-status-submit'`);
+  assert.equal(await evaluate(`document.querySelector('#aluno-status-question img') === null`), true);
+  assert.match(await evaluate(`document.querySelector('#aluno-status-explanation').textContent`), /impede.*login/);
+  await screenshot('alunos-status-375');
+  await click('#aluno-status-submit');
+  await until(`!document.querySelector('.modal-backdrop') && document.querySelector('#alunos-rows tr:last-child').textContent.includes('Inativo')`);
+  await click('#alunos-rows tr:last-child button:last-child');
+  await until(`document.activeElement.id === 'aluno-status-submit'`);
+  await click('#aluno-status-submit');
+  await until(`!document.querySelector('.modal-backdrop') && !document.querySelector('#alunos-rows tr:last-child').textContent.includes('Inativo')`);
+  const beforeRefresh = requests.length;
+  await click('#refresh-alunos');
+  await until(`document.querySelector('#alunos-panel').getAttribute('aria-busy') === 'false' && !document.querySelector('#create-aluno').disabled`);
+  assert.equal(requests.slice(beforeRefresh).filter(url => url === base + '/api/alunos').length, 1);
+  assert.equal(requests.slice(beforeRefresh).filter(url => url.startsWith(base + '/api/usuarios?')).length, 1);
+  assert.equal(requests.slice(beforeRefresh).some(url => url.startsWith(base + '/api/usuarios/')), false);
+
+  events.set('Fetch.requestPaused', []);
+  let alunoMode = 'empty';
+  let releaseAlunos;
+  on('Fetch.requestPaused', async ({requestId}) => {
+    if (alunoMode === 'hold') { releaseAlunos = requestId; return; }
+    await call('Fetch.fulfillRequest', { requestId, responseCode: alunoMode === 'error' ? 500 : 200,
+      responseHeaders: [{name:'Content-Type',value:'application/json'}],
+      body:Buffer.from(alunoMode === 'empty' ? '[]' : '{}').toString('base64') });
+  });
+  await call('Fetch.enable', { patterns: [{urlPattern:`${base}/api/alunos`,requestStage:'Request'}] });
+  await click('#refresh-alunos');
+  await until(`document.querySelector('#alunos-state').textContent.includes('Nenhum aluno cadastrado.') && !document.querySelector('#create-aluno').disabled`);
+  await screenshot('alunos-vazio-375');
+  alunoMode = 'error';
+  await click('#refresh-alunos');
+  await until(`!document.querySelector('#alunos-error').hidden && !document.querySelector('#refresh-alunos').disabled`);
+  await screenshot('alunos-erro-375');
+  alunoMode = 'hold';
+  await click('#retry-alunos');
+  await until(`document.querySelector('#alunos-panel').getAttribute('aria-busy') === 'true'`);
+  assert.match(await evaluate(`document.querySelector('#alunos-state').textContent`), /Carregando alunos/);
+  await screenshot('alunos-loading-375');
+  for(let i=0;!releaseAlunos && i<100;i++) await delay(20);
+  assert(releaseAlunos);
+  await call('Fetch.continueRequest', {requestId:releaseAlunos});
+  await until(`!document.querySelector('#alunos-table-container').hidden`);
+  await call('Fetch.disable');
+  assert.equal(await evaluate(`document.documentElement.scrollWidth <= innerWidth`), true);
+  assert.equal(await evaluate(`localStorage.length === 0 && sessionStorage.length === 0`), true);
+  console.log('TH-31 Chrome passed: direct hash, list/join/no N+1, real create/edit/deactivate/reactivate, XSS, modal focus/Escape/return, loading/empty/error/retry, desktop and 375x812 without global overflow.');
   assert.equal(requests.some((url) => /^https?:/.test(url) && !url.startsWith(base + '/')), false, 'External request');
   assert.deepEqual(errors, [], 'Browser runtime exceptions');
   assert.deepEqual(interceptionErrors, [], 'Interception failures');

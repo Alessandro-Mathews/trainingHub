@@ -37,6 +37,7 @@
         <a class="nav-item active" href="#dashboard" data-page="dashboard" aria-current="page"><span class="nav-symbol" aria-hidden="true">▦</span> Dashboard</a>
         <a class="nav-item" href="#academias" data-page="academias"><span class="nav-symbol" aria-hidden="true">▤</span> Academias</a>
         <p class="nav-label modules-label">ADMINISTRAÇÃO</p>
+        <a class="nav-item" href="#alunos" data-page="alunos"><span class="nav-symbol" aria-hidden="true">♙</span> Alunos</a>
         <span class="nav-item unavailable" aria-disabled="true"><span class="nav-symbol" aria-hidden="true">♙</span> Usuários <small>Em breve</small></span>
         <span class="nav-item unavailable" aria-disabled="true"><span class="nav-symbol" aria-hidden="true">◇</span> Perfis <small>Em breve</small></span>
       </nav>
@@ -79,10 +80,65 @@
           <div class="panel-footer">Consulta de academias · TrainingHub</div>
         </div>
       </section>
+      <section id="alunos" aria-labelledby="alunos-title" hidden>
+        <div class="page-heading">
+          <div><p class="eyebrow">GESTÃO</p><h1 id="alunos-title">Alunos</h1><p class="page-description">Gerencie os alunos e os dados básicos de suas contas.</p></div>
+          <div class="d-flex flex-wrap gap-2"><button class="btn btn-outline-secondary" id="refresh-alunos" type="button">Atualizar listagem</button><button class="btn btn-primary" id="create-aluno" type="button" disabled>Cadastrar aluno</button></div>
+        </div>
+        <p id="alunos-registration-info" role="status" aria-live="polite">Os dados de cadastro serão consultados ao abrir esta seção.</p>
+        <div class="panel" id="alunos-panel" aria-busy="false">
+          <div class="panel-heading"><h2>Alunos cadastrados</h2><span class="neutral-badge" id="alunos-count">Não consultado</span></div>
+          <p id="alunos-feedback" class="px-3 pt-3" role="status" aria-live="polite" tabindex="-1"></p>
+          <div id="alunos-state" class="list-state" role="status" aria-live="polite"></div>
+          <div id="alunos-error" class="list-state" role="alert" hidden><h3 id="alunos-error-title">Não foi possível carregar os alunos.</h3><p id="alunos-error-message"></p><button class="btn btn-primary" id="retry-alunos" type="button">Tentar novamente</button></div>
+          <div id="alunos-table-container" class="table-responsive" role="region" aria-label="Lista de alunos" tabindex="0" hidden>
+            <table class="table align-middle mb-0"><caption class="visually-hidden">Alunos: nome, e-mail, situação da conta, cadastro como Aluno e ações.</caption><thead><tr><th scope="col">Nome</th><th scope="col">E-mail</th><th scope="col">Situação da conta</th><th scope="col">Cadastro como Aluno</th><th scope="col">Ações</th></tr></thead><tbody id="alunos-rows"></tbody></table>
+          </div>
+          <div class="panel-footer">A situação exibida corresponde à conta do usuário.</div>
+        </div>
+      </section>
       <footer class="content-footer"><span>TrainingHub</span><span>Sua evolução em um só lugar</span></footer>
       <noscript><p class="alert alert-warning">Ative o JavaScript para navegar e consultar os dados do TrainingHub.</p></noscript>
     </main>
   </div>
+  </div>
+  <div class="modal fade" id="aluno-create-modal" tabindex="-1" aria-labelledby="aluno-create-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable"><div class="modal-content">
+      <div class="modal-header"><h2 class="modal-title fs-5" id="aluno-create-title">Cadastrar aluno</h2><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Fechar cadastro"></button></div>
+      <div class="modal-body">
+        <form id="aluno-create-form" novalidate aria-busy="false">
+          <div class="mb-3"><label class="form-label" for="aluno-create-mode">Como deseja cadastrar?</label><select class="form-select" id="aluno-create-mode"><option value="new">Criar nova conta</option><option value="existing">Vincular usuário existente</option></select></div>
+          <div id="aluno-new-fields">
+            <div class="mb-3"><label class="form-label" for="aluno-create-name">Nome</label><input class="form-control" id="aluno-create-name" name="nome" required autocomplete="name" aria-describedby="aluno-create-feedback"></div>
+            <div class="mb-3"><label class="form-label" for="aluno-create-email">E-mail</label><input class="form-control" id="aluno-create-email" name="email" type="email" required autocomplete="email" aria-describedby="aluno-create-feedback"></div>
+            <div class="mb-3"><label class="form-label" for="aluno-create-password">Senha inicial</label><input class="form-control" id="aluno-create-password" name="senha" type="password" required autocomplete="new-password" aria-describedby="aluno-create-feedback"></div>
+          </div>
+          <div id="aluno-existing-fields" hidden><label class="form-label" for="aluno-existing-user">Usuário elegível</label><select class="form-select" id="aluno-existing-user" required aria-describedby="aluno-existing-help aluno-create-feedback"></select><p class="form-text" id="aluno-existing-help">Contas ativas com perfil Aluno que ainda não possuem cadastro como Aluno.</p></div>
+          <p id="aluno-create-feedback" role="status" aria-live="polite" tabindex="-1"></p>
+          <div class="d-flex flex-wrap gap-2"><button class="btn btn-primary" id="aluno-create-submit" type="submit">Cadastrar aluno</button><button class="btn btn-primary" id="aluno-complete" type="button" hidden>Tentar concluir cadastro do aluno</button><button class="btn btn-outline-secondary" id="aluno-end-attempt" type="button" hidden>Encerrar tentativa</button><button class="btn btn-outline-secondary" id="aluno-reconcile" type="button" hidden>Atualizar dados</button></div>
+        </form>
+      </div>
+      <div class="modal-footer"><button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Fechar</button></div>
+    </div></div>
+  </div>
+  <div class="modal fade" id="aluno-edit-modal" tabindex="-1" aria-labelledby="aluno-edit-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable"><div class="modal-content">
+      <div class="modal-header"><h2 class="modal-title fs-5" id="aluno-edit-title">Editar conta do aluno</h2><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Fechar edição"></button></div>
+      <div class="modal-body"><form id="aluno-edit-form" novalidate aria-busy="false">
+        <div class="mb-3"><label class="form-label" for="aluno-edit-name">Nome</label><input class="form-control" id="aluno-edit-name" name="nome" required autocomplete="name" aria-describedby="aluno-edit-feedback"></div>
+        <div class="mb-3"><label class="form-label" for="aluno-edit-email">E-mail</label><input class="form-control" id="aluno-edit-email" name="email" type="email" required autocomplete="email" aria-describedby="aluno-edit-feedback"></div>
+        <p id="aluno-edit-feedback" role="status" aria-live="polite" tabindex="-1"></p>
+        <button class="btn btn-primary" id="aluno-edit-submit" type="submit">Salvar alterações</button>
+      </form></div>
+      <div class="modal-footer"><button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Fechar</button></div>
+    </div></div>
+  </div>
+  <div class="modal fade" id="aluno-status-modal" tabindex="-1" aria-labelledby="aluno-status-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable"><div class="modal-content">
+      <div class="modal-header"><h2 class="modal-title fs-5" id="aluno-status-title">Confirmar situação da conta</h2><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Fechar confirmação"></button></div>
+      <div class="modal-body"><p id="aluno-status-question"></p><p id="aluno-status-explanation"></p><p id="aluno-status-feedback" role="status" aria-live="polite" tabindex="-1"></p></div>
+      <div class="modal-footer"><button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary" id="aluno-status-submit" type="button">Confirmar</button></div>
+    </div></div>
   </div>
 </body>
 </html>
