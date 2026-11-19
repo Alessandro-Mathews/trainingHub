@@ -392,6 +392,90 @@ try {
   assert.equal(await evaluate(`document.documentElement.scrollWidth <= innerWidth`), true);
   assert.equal(await evaluate(`localStorage.length === 0 && sessionStorage.length === 0`), true);
   console.log('TH-31 Chrome passed: direct hash, list/join/no N+1, real create/edit/deactivate/reactivate, XSS, modal focus/Escape/return, loading/empty/error/retry, desktop and 375x812 without global overflow.');
+  {
+  // TH-32 exercises the delivered modules against this suite's isolated server.
+  await call('Page.navigate', { url: `${base}/index.html#instrutores` });
+  await until(`!document.querySelector('#instrutores-table-container').hidden && !document.querySelector('#create-instrutor').disabled`);
+  assert.equal(await evaluate('document.title'), 'Instrutores | TrainingHub');
+  for (const [width, height] of [[1440, 1000], [375, 812]]) {
+    await viewport(width, height);
+    assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
+    await screenshot(`instrutores-${width}`);
+    await click('#create-instrutor');
+    await until(`document.querySelector('#instrutor-create-modal').classList.contains('show') && document.activeElement.id === 'instrutor-create-mode'`);
+    assert.equal(await evaluate(`document.querySelector('#instrutor-create-modal').scrollWidth <= innerWidth`), true);
+    await screenshot(`instrutores-cadastro-${width}`);
+    await call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await until(`!document.querySelector('.modal-backdrop') && document.activeElement.id === 'create-instrutor'`);
+  }
+  await click('#create-instrutor');
+  await until(`document.activeElement.id === 'instrutor-create-mode'`);
+  await evaluate(`(() => {
+    document.querySelector('#instrutor-create-name').value = 'Instrutor com nome longo para validar cadastro e responsividade';
+    document.querySelector('#instrutor-create-email').value = 'instrutor.th32.browser@example.test';
+    document.querySelector('#instrutor-create-password').value = 'TH32-browser-password';
+  })()`);
+  await click('#instrutor-create-submit');
+  await until(`!document.querySelector('.modal-backdrop') && document.querySelector('#instrutores-rows').children.length === 2`);
+  assert.equal(await evaluate(`document.querySelector('#instrutor-create-password').value`), '');
+  await click('#instrutores-rows tr:last-child button:first-child');
+  await until(`document.activeElement.id === 'instrutor-edit-name'`);
+  const maliciousName = '<img src=x onerror="window.th32Injected=true"> Nome longo para validação';
+  await evaluate(`document.querySelector('#instrutor-edit-name').value = ${JSON.stringify(maliciousName)}`);
+  await screenshot('instrutores-edicao-375');
+  await click('#instrutor-edit-submit');
+  await until(`!document.querySelector('.modal-backdrop') && document.querySelector('#instrutores-rows').textContent.includes(${JSON.stringify(maliciousName)})`);
+  assert.equal(await evaluate(`document.querySelector('#instrutores-rows img') === null && window.th32Injected !== true`), true);
+  await click('#instrutores-rows tr:last-child button:last-child');
+  await until(`document.activeElement.id === 'instrutor-status-submit'`);
+  assert.equal(await evaluate(`document.querySelector('#instrutor-status-question img') === null`), true);
+  assert.match(await evaluate(`document.querySelector('#instrutor-status-explanation').textContent`), /impede.*login/);
+  await screenshot('instrutores-status-375');
+  await click('#instrutor-status-submit');
+  await until(`!document.querySelector('.modal-backdrop') && document.querySelector('#instrutores-rows tr:last-child').textContent.includes('Inativo')`);
+  await click('#instrutores-rows tr:last-child button:last-child');
+  await until(`document.activeElement.id === 'instrutor-status-submit'`);
+  await click('#instrutor-status-submit');
+  await until(`!document.querySelector('.modal-backdrop') && !document.querySelector('#instrutores-rows tr:last-child').textContent.includes('Inativo')`);
+  const beforeRefresh = requests.length;
+  await click('#refresh-instrutores');
+  await until(`document.querySelector('#instrutores-panel').getAttribute('aria-busy') === 'false' && !document.querySelector('#create-instrutor').disabled`);
+  assert.equal(requests.slice(beforeRefresh).filter(url => url === base + '/api/instrutores').length, 1);
+  assert.equal(requests.slice(beforeRefresh).filter(url => url.startsWith(base + '/api/usuarios?')).length, 1);
+  assert.equal(requests.slice(beforeRefresh).some(url => url.startsWith(base + '/api/usuarios/')), false);
+
+  events.set('Fetch.requestPaused', []);
+  let instrutorMode = 'empty';
+  let releaseInstrutores;
+  on('Fetch.requestPaused', async ({requestId}) => {
+    if (instrutorMode === 'hold') { releaseInstrutores = requestId; return; }
+    await call('Fetch.fulfillRequest', { requestId, responseCode: instrutorMode === 'error' ? 500 : 200,
+      responseHeaders: [{name:'Content-Type',value:'application/json'}],
+      body:Buffer.from(instrutorMode === 'empty' ? '[]' : '{}').toString('base64') });
+  });
+  await call('Fetch.enable', { patterns: [{urlPattern:`${base}/api/instrutores`,requestStage:'Request'}] });
+  await click('#refresh-instrutores');
+  await until(`document.querySelector('#instrutores-state').textContent.includes('Nenhum instrutor cadastrado.') && !document.querySelector('#create-instrutor').disabled`);
+  await screenshot('instrutores-vazio-375');
+  instrutorMode = 'error';
+  await click('#refresh-instrutores');
+  await until(`!document.querySelector('#instrutores-error').hidden && !document.querySelector('#refresh-instrutores').disabled`);
+  await screenshot('instrutores-erro-375');
+  instrutorMode = 'hold';
+  await click('#retry-instrutores');
+  await until(`document.querySelector('#instrutores-panel').getAttribute('aria-busy') === 'true'`);
+  assert.match(await evaluate(`document.querySelector('#instrutores-state').textContent`), /Carregando instrutores/);
+  await screenshot('instrutores-loading-375');
+  for(let i=0;!releaseInstrutores && i<100;i++) await delay(20);
+  assert(releaseInstrutores);
+  await call('Fetch.continueRequest', {requestId:releaseInstrutores});
+  await until(`!document.querySelector('#instrutores-table-container').hidden`);
+  await call('Fetch.disable');
+  assert.equal(await evaluate(`document.documentElement.scrollWidth <= innerWidth`), true);
+  assert.equal(await evaluate(`localStorage.length === 0 && sessionStorage.length === 0`), true);
+  console.log('TH-32 Chrome passed: direct hash, list/join/no N+1, real create/edit/deactivate/reactivate, XSS, modal focus/Escape/return, loading/empty/error/retry, desktop and 375x812 without global overflow.');
+  }
   assert.equal(requests.some((url) => /^https?:/.test(url) && !url.startsWith(base + '/')), false, 'External request');
   assert.deepEqual(errors, [], 'Browser runtime exceptions');
   assert.deepEqual(interceptionErrors, [], 'Interception failures');
