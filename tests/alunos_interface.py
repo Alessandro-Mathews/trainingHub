@@ -536,6 +536,7 @@ for(const status of [200,401,403]) {
   const alunoURL='data:text/javascript;base64,'+Buffer.from(alunoSource+'\n// '+sequence++).toString('base64');
   let appSource=(await readFile('public/js/app.js','utf8')).replace("'./api.js'",JSON.stringify(apiURL))
     .replace("'./alunos.js'",JSON.stringify(alunoURL))
+    .replace("'./instrutores.js'",JSON.stringify('data:text/javascript,export function initInstrutores(){};export function visitInstrutores(){}'))
     .replace("'./academias.js'",JSON.stringify('data:text/javascript,export function loadAcademias(){}'));
   await import('data:text/javascript;base64,'+Buffer.from(appSource+'\n// '+sequence++).toString('base64'));
   assert.deepEqual(order,['/api/auth/me']);releaseAuth();

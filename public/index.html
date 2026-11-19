@@ -38,6 +38,7 @@
         <a class="nav-item" href="#academias" data-page="academias"><span class="nav-symbol" aria-hidden="true">▤</span> Academias</a>
         <p class="nav-label modules-label">ADMINISTRAÇÃO</p>
         <a class="nav-item" href="#alunos" data-page="alunos"><span class="nav-symbol" aria-hidden="true">♙</span> Alunos</a>
+        <a class="nav-item" href="#instrutores" data-page="instrutores"><span class="nav-symbol" aria-hidden="true">♙</span> Instrutores</a>
         <span class="nav-item unavailable" aria-disabled="true"><span class="nav-symbol" aria-hidden="true">♙</span> Usuários <small>Em breve</small></span>
         <span class="nav-item unavailable" aria-disabled="true"><span class="nav-symbol" aria-hidden="true">◇</span> Perfis <small>Em breve</small></span>
       </nav>
@@ -97,6 +98,23 @@
           <div class="panel-footer">A situação exibida corresponde à conta do usuário.</div>
         </div>
       </section>
+      <section id="instrutores" aria-labelledby="instrutores-title" hidden>
+        <div class="page-heading">
+          <div><p class="eyebrow">GESTÃO</p><h1 id="instrutores-title">Instrutores</h1><p class="page-description">Gerencie os instrutores e os dados básicos de suas contas.</p></div>
+          <div class="d-flex flex-wrap gap-2"><button class="btn btn-outline-secondary" id="refresh-instrutores" type="button">Atualizar listagem</button><button class="btn btn-primary" id="create-instrutor" type="button" disabled>Cadastrar instrutor</button></div>
+        </div>
+        <p id="instrutores-registration-info" role="status" aria-live="polite">Os dados de cadastro serão consultados ao abrir esta seção.</p>
+        <div class="panel" id="instrutores-panel" aria-busy="false">
+          <div class="panel-heading"><h2>Instrutores cadastrados</h2><span class="neutral-badge" id="instrutores-count">Não consultado</span></div>
+          <p id="instrutores-feedback" class="px-3 pt-3" role="status" aria-live="polite" tabindex="-1"></p>
+          <div id="instrutores-state" class="list-state" role="status" aria-live="polite"></div>
+          <div id="instrutores-error" class="list-state" role="alert" hidden><h3 id="instrutores-error-title">Não foi possível carregar os instrutores.</h3><p id="instrutores-error-message"></p><button class="btn btn-primary" id="retry-instrutores" type="button">Tentar novamente</button></div>
+          <div id="instrutores-table-container" class="table-responsive" role="region" aria-label="Lista de instrutores" tabindex="0" hidden>
+            <table class="table align-middle mb-0"><caption class="visually-hidden">Instrutores: nome, e-mail, situação da conta, cadastro como Instrutor e ações.</caption><thead><tr><th scope="col">Nome</th><th scope="col">E-mail</th><th scope="col">Situação da conta</th><th scope="col">Cadastro como Instrutor</th><th scope="col">Ações</th></tr></thead><tbody id="instrutores-rows"></tbody></table>
+          </div>
+          <div class="panel-footer">A situação exibida corresponde à conta do usuário.</div>
+        </div>
+      </section>
       <footer class="content-footer"><span>TrainingHub</span><span>Sua evolução em um só lugar</span></footer>
       <noscript><p class="alert alert-warning">Ative o JavaScript para navegar e consultar os dados do TrainingHub.</p></noscript>
     </main>
@@ -138,6 +156,44 @@
       <div class="modal-header"><h2 class="modal-title fs-5" id="aluno-status-title">Confirmar situação da conta</h2><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Fechar confirmação"></button></div>
       <div class="modal-body"><p id="aluno-status-question"></p><p id="aluno-status-explanation"></p><p id="aluno-status-feedback" role="status" aria-live="polite" tabindex="-1"></p></div>
       <div class="modal-footer"><button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary" id="aluno-status-submit" type="button">Confirmar</button></div>
+    </div></div>
+  </div>
+  <div class="modal fade" id="instrutor-create-modal" tabindex="-1" aria-labelledby="instrutor-create-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable"><div class="modal-content">
+      <div class="modal-header"><h2 class="modal-title fs-5" id="instrutor-create-title">Cadastrar instrutor</h2><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Fechar cadastro"></button></div>
+      <div class="modal-body">
+        <form id="instrutor-create-form" novalidate aria-busy="false">
+          <div class="mb-3"><label class="form-label" for="instrutor-create-mode">Como deseja cadastrar?</label><select class="form-select" id="instrutor-create-mode"><option value="new">Criar nova conta</option><option value="existing">Vincular usuário existente</option></select></div>
+          <div id="instrutor-new-fields">
+            <div class="mb-3"><label class="form-label" for="instrutor-create-name">Nome</label><input class="form-control" id="instrutor-create-name" name="nome" required autocomplete="name" aria-describedby="instrutor-create-feedback"></div>
+            <div class="mb-3"><label class="form-label" for="instrutor-create-email">E-mail</label><input class="form-control" id="instrutor-create-email" name="email" type="email" required autocomplete="email" aria-describedby="instrutor-create-feedback"></div>
+            <div class="mb-3"><label class="form-label" for="instrutor-create-password">Senha inicial</label><input class="form-control" id="instrutor-create-password" name="senha" type="password" required autocomplete="new-password" aria-describedby="instrutor-create-feedback"></div>
+          </div>
+          <div id="instrutor-existing-fields" hidden><label class="form-label" for="instrutor-existing-user">Usuário elegível</label><select class="form-select" id="instrutor-existing-user" required aria-describedby="instrutor-existing-help instrutor-create-feedback"></select><p class="form-text" id="instrutor-existing-help">Contas ativas com perfil Instrutor que ainda não possuem cadastro como Instrutor.</p></div>
+          <p id="instrutor-create-feedback" role="status" aria-live="polite" tabindex="-1"></p>
+          <div class="d-flex flex-wrap gap-2"><button class="btn btn-primary" id="instrutor-create-submit" type="submit">Cadastrar instrutor</button><button class="btn btn-primary" id="instrutor-complete" type="button" hidden>Tentar concluir cadastro do instrutor</button><button class="btn btn-outline-secondary" id="instrutor-end-attempt" type="button" hidden>Encerrar tentativa</button><button class="btn btn-outline-secondary" id="instrutor-reconcile" type="button" hidden>Atualizar dados</button></div>
+        </form>
+      </div>
+      <div class="modal-footer"><button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Fechar</button></div>
+    </div></div>
+  </div>
+  <div class="modal fade" id="instrutor-edit-modal" tabindex="-1" aria-labelledby="instrutor-edit-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable"><div class="modal-content">
+      <div class="modal-header"><h2 class="modal-title fs-5" id="instrutor-edit-title">Editar conta do instrutor</h2><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Fechar edição"></button></div>
+      <div class="modal-body"><form id="instrutor-edit-form" novalidate aria-busy="false">
+        <div class="mb-3"><label class="form-label" for="instrutor-edit-name">Nome</label><input class="form-control" id="instrutor-edit-name" name="nome" required autocomplete="name" aria-describedby="instrutor-edit-feedback"></div>
+        <div class="mb-3"><label class="form-label" for="instrutor-edit-email">E-mail</label><input class="form-control" id="instrutor-edit-email" name="email" type="email" required autocomplete="email" aria-describedby="instrutor-edit-feedback"></div>
+        <p id="instrutor-edit-feedback" role="status" aria-live="polite" tabindex="-1"></p>
+        <button class="btn btn-primary" id="instrutor-edit-submit" type="submit">Salvar alterações</button>
+      </form></div>
+      <div class="modal-footer"><button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Fechar</button></div>
+    </div></div>
+  </div>
+  <div class="modal fade" id="instrutor-status-modal" tabindex="-1" aria-labelledby="instrutor-status-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable"><div class="modal-content">
+      <div class="modal-header"><h2 class="modal-title fs-5" id="instrutor-status-title">Confirmar situação da conta</h2><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Fechar confirmação"></button></div>
+      <div class="modal-body"><p id="instrutor-status-question"></p><p id="instrutor-status-explanation"></p><p id="instrutor-status-feedback" role="status" aria-live="polite" tabindex="-1"></p></div>
+      <div class="modal-footer"><button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary" id="instrutor-status-submit" type="button">Confirmar</button></div>
     </div></div>
   </div>
 </body>
