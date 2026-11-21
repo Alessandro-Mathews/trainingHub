@@ -14,7 +14,12 @@ models::Usuario publicFromRow(const drogon::orm::Row &row)
     user.perfil_id = row["perfil_id"].as<std::int64_t>();
     user.nome = row["nome"].as<std::string>();
     user.email = row["email"].as<std::string>();
-    user.ativo = row["ativo"].as<int>() != 0;
+    // The model/API status is boolean. Reject corrupt persisted states instead
+    // of exposing them as active or silently treating them as inactive.
+    const auto active = row["ativo"].as<int>();
+    if (active != 0 && active != 1)
+        throw drogon::orm::ConversionError("Invalid Usuario activity state");
+    user.ativo = active == 1;
     user.criado_em = row["criado_em"].as<std::string>();
     return user;
 }

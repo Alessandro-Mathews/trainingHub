@@ -249,6 +249,22 @@ def run():
                     request("PUT", f"/api/usuarios/{invalid}/status", {"ativo": False}, 400)
 
                 # Administrative recovery is independent of the target's current profile eligibility.
+                # Invalid activity must fail closed on reads, while an explicit status write
+                # remains able to recover the account without changing unrelated fields.
+                for invalid_active in [2, -1]:
+                    sql("UPDATE usuario SET ativo=? WHERE id=501", (invalid_active,))
+                    request("GET", "/api/usuarios/501?academia_id=1", expected=500)
+                    request("GET", "/api/usuarios?academia_id=1", expected=500)
+                    assert row(501)[6] == invalid_active, "Reads must not normalize persisted data"
+                    login_as(501, expected=500)
+                    status(501, False)
+                    assert request("GET", "/api/usuarios/501?academia_id=1")["ativo"] is False
+                    login_as(501, expected=401)
+                    update(501)
+                    status(501, True)
+                    assert request("GET", "/api/usuarios/501?academia_id=1")["ativo"] is True
+                    login_as(501, email=row(501)[4])
+
                 update(504)
                 status(504, False)
                 status(504, True)

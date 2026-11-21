@@ -214,6 +214,31 @@ def run():
                         put(expected=404, client=client, url="/api/alunos/999999/instrutor")
                     put(LARGE + 2, client=admin_b, url=f"/api/alunos/{LARGE + 2}/instrutor")
 
+                    # Usuario reads must never advertise an active candidate rejected solely
+                    # by TH-30's exact activity predicate. Invalid persisted values are errors,
+                    # not a third status or a silently normalized inactive account.
+                    for active in [0, 1, 2, -1]:
+                        existing_session = login(301)
+                        sql("UPDATE usuario SET ativo=? WHERE id=301", (active,))
+                        try:
+                            valid = active in (0, 1)
+                            read_status = 200 if valid else 500
+                            account = request("GET", "/api/usuarios/301?academia_id=1", expected=read_status)
+                            accounts = request("GET", "/api/usuarios?academia_id=1", expected=read_status)
+                            if valid:
+                                assert account["ativo"] is (active == 1)
+                                assert next(user for user in accounts if user["id"] == 301)["ativo"] is (active == 1)
+                            assert sql("SELECT ativo FROM usuario WHERE id=301") == [(active,)]
+                            request("POST", "/api/auth/login", {"academia_id": 1,
+                                "email": "u301@example.test", "senha": PASSWORD},
+                                200 if active == 1 else 401 if valid else 500, anonymous)
+                            request("GET", "/api/auth/me", expected=200 if active == 1 else 401,
+                                client=existing_session)
+                            put(LARGE + 1, 200 if active == 1 else 400)
+                            assert request("GET", path) == {"instrutor_id": LARGE + 1}
+                        finally:
+                            sql("UPDATE usuario SET ativo=1 WHERE id=301")
+
                     # All mutations concern target users, never the authenticated actors.
                     for user_id, canonical, wrong, noncanonical in [
                             (200, "Aluno", "Instrutor", "aluno"),
