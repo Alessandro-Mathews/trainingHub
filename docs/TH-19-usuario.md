@@ -125,3 +125,44 @@ dependência ou configuração de autenticação foi alterada.
 Para revisão humana: contrato explícito de academia, comparação exata do e-mail,
 senha apenas não vazia e rejeição de vínculos inativos. Consultas exigem academia,
 mas não fornecem autorização; o estado ativo pode mudar após validação.
+
+## Domínio de atividade de Usuario — correção preparatória da TH-33
+
+`Usuario.ativo` tem somente dois estados válidos: o inteiro persistido 0 representa
+`false`; o inteiro 1 representa `true`. Outros inteiros, incluindo 2 e -1, não têm
+significado legítimo. Criação omite a coluna e usa o default 1 da migration 001;
+TH-63 aceita somente booleano JSON e grava explicitamente 0 ou 1.
+
+O mapper compartilhado de Usuario valida esse domínio antes de construir o model
+booleano. Valores inválidos produzem erro de conversão controlado: GET individual,
+listagem e novo login retornam 500 genérico, sem dados parciais ou detalhes internos.
+Leituras não modificam nem normalizam o valor persistido. A listagem inteira falha
+se contiver uma conta inválida, evitando oferecer um candidato falsamente ativo.
+Isso também cobre as respostas de criação, edição e status que usam o mapper.
+
+AuthContextRepository já exige atividade exatamente 1 e rejeita sessões de contas
+com 0, 2 ou -1 com 401. AlunoRepository e InstrutorRepository usam a mesma condição
+para elegibilidade, e o UPDATE atômico da TH-30 repete `u.ativo = 1` no SQL.
+Assim, estados inválidos nunca concedem acesso nem elegibilidade. Os status HTTP
+distinguem falha ao projetar dados inválidos (500), sessão revogada (401) e alvo
+inelegível para vínculo (400).
+
+Não foi criada migration: o defeito estava na conversão permissiva do repository,
+não nas escritas normais, que já produzem apenas 0/1. Adicionar constraint exigiria
+migrar a tabela ou introduzir triggers e uma política para dados legados, sem ser
+necessário para corrigir o contrato das APIs existentes. O schema continua sem
+CHECK; escritores SQL externos podem introduzir dados inválidos, que são rejeitados
+na leitura. A correção não impõe uma nova invariante física ao banco.
+
+Antes da correção, a inspeção somente leitura do banco de desenvolvimento encontrou
+duas contas com atividade inteira dentro de 0/1. Nenhum dado persistente foi alterado.
+Dados inválidos em outro ambiente exigem investigação; uma alteração administrativa
+explícita por `PUT /api/usuarios/{id}/status` pode restaurar 0/1, preservando os demais
+campos. Não há normalização ou reativação automática. Edição de nome/e-mail não
+repara atividade inválida: se o UPDATE persistir e o mapper rejeitar a resposta,
+o 500 não prova que a edição falhou; consultar o estado após a recuperação explícita.
+
+As regressões HTTP em `usuario_integration.py` e `aluno_instrutor_integration.py`
+cobrem 0/1/2/-1, leitura individual/listagem, login, sessão existente, recuperação
+TH-63 e elegibilidade TH-30. Os testes existentes de texto e overflow permanecem.
+Nenhum contrato, endpoint ou arquivo frontend da TH-33 foi acrescentado.

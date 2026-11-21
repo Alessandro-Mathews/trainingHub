@@ -225,7 +225,7 @@ async function setup() {
   module.initAlunos(actor);
   await module.visitAlunos();
 }
-const rowButtons=()=>e('alunos-rows').querySelectorAll('button');
+const rowButtons=()=>e('alunos-rows').querySelectorAll('button').filter(button=>button.dataset.action!=='responsavel');
 async function newAccount() {
   await e('create-aluno').fire('click');
   e('aluno-create-name').value='Nova conta';

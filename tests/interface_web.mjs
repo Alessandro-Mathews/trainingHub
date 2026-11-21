@@ -295,7 +295,7 @@ try {
   assert.match(await evaluate(`document.querySelector('#academias-rows').textContent`), /<img src=x/);
   // A real session revocation makes both the resource and /me return 401.
   // This replaces the old generic-error assertion with the approved login redirect.
-  await evaluate(`(await import('/js/api.js')).logout()`);
+  await evaluate(`import('/js/api.js').then(api => api.logout())`);
   mode = 'unauthenticated';
   await click('#refresh-academias');
   await loginReady();
@@ -344,14 +344,14 @@ try {
   await click('#aluno-edit-submit');
   await until(`!document.querySelector('.modal-backdrop') && document.querySelector('#alunos-rows').textContent.includes(${JSON.stringify(maliciousName)})`);
   assert.equal(await evaluate(`document.querySelector('#alunos-rows img') === null && window.th31Injected !== true`), true);
-  await click('#alunos-rows tr:last-child button:last-child');
+  await click('#alunos-rows tr:last-child button[data-action="status"]');
   await until(`document.activeElement.id === 'aluno-status-submit'`);
   assert.equal(await evaluate(`document.querySelector('#aluno-status-question img') === null`), true);
   assert.match(await evaluate(`document.querySelector('#aluno-status-explanation').textContent`), /impede.*login/);
   await screenshot('alunos-status-375');
   await click('#aluno-status-submit');
   await until(`!document.querySelector('.modal-backdrop') && document.querySelector('#alunos-rows tr:last-child').textContent.includes('Inativo')`);
-  await click('#alunos-rows tr:last-child button:last-child');
+  await click('#alunos-rows tr:last-child button[data-action="status"]');
   await until(`document.activeElement.id === 'aluno-status-submit'`);
   await click('#aluno-status-submit');
   await until(`!document.querySelector('.modal-backdrop') && !document.querySelector('#alunos-rows tr:last-child').textContent.includes('Inativo')`);
@@ -476,6 +476,121 @@ try {
   assert.equal(await evaluate(`localStorage.length === 0 && sessionStorage.length === 0`), true);
   console.log('TH-32 Chrome passed: direct hash, list/join/no N+1, real create/edit/deactivate/reactivate, XSS, modal focus/Escape/return, loading/empty/error/retry, desktop and 375x812 without global overflow.');
   }
+  // TH-33 uses the same isolated server and records created by TH-31/TH-32.
+  await call('Page.navigate', { url: `${base}/index.html#alunos` });
+  await until(`!document.querySelector('#alunos-table-container').hidden && !document.querySelector('#create-aluno').disabled`);
+  const th33Instructors = await evaluate(`import('/js/api.js').then(api => api.getJson('/api/instrutores'))`);
+  assert(th33Instructors.length >= 2);
+  const th33Action = '#alunos-rows tr:first-child button[data-action="responsavel"]';
+  const setInstructor = async (id) => evaluate(`(() => {
+    const select = document.querySelector('#aluno-responsavel-select');
+    select.value = ${JSON.stringify(id)}; select.dispatchEvent(new Event('change', {bubbles:true}));
+  })()`);
+  for (const [width, height] of [[1440, 1000], [375, 812]]) {
+    await viewport(width, height);
+    const beforeModal = requests.length;
+    await evaluate(`window.th33Opener = document.querySelector(${JSON.stringify(th33Action)})`);
+    await click(th33Action);
+    await until(`document.querySelector('#aluno-responsavel-modal').classList.contains('show') && document.querySelector('#aluno-responsavel-form').getAttribute('aria-busy') === 'false' && document.activeElement.id === 'aluno-responsavel-cancel'`);
+    assert.equal(requests.slice(beforeModal).filter(url => url.startsWith(base+'/api/')).length, 4);
+    assert.equal(requests.slice(beforeModal).filter(url => /\/alunos\/[^/]+\/instrutor$/.test(url)).length, 1);
+    assert.match(await evaluate(`document.querySelector('#aluno-responsavel-current').textContent`), /Nenhum instrutor definido/);
+    assert.equal(await evaluate(`document.documentElement.scrollWidth <= innerWidth && document.querySelector('#aluno-responsavel-modal').scrollWidth <= innerWidth`), true);
+    await screenshot(`aluno-instrutor-${width}`);
+    await evaluate(`document.querySelector('#aluno-responsavel-select').focus()`);
+    await call('Input.dispatchKeyEvent', {type:'keyDown',key:'Tab',code:'Tab',windowsVirtualKeyCode:9});
+    await call('Input.dispatchKeyEvent', {type:'keyUp',key:'Tab',code:'Tab',windowsVirtualKeyCode:9});
+    assert.equal(await evaluate(`document.activeElement.id`), 'aluno-responsavel-refresh');
+    await call('Input.dispatchKeyEvent', {type:'keyDown',key:'Tab',code:'Tab',windowsVirtualKeyCode:9,modifiers:8});
+    await call('Input.dispatchKeyEvent', {type:'keyUp',key:'Tab',code:'Tab',windowsVirtualKeyCode:9,modifiers:8});
+    assert.equal(await evaluate(`document.activeElement.id`), 'aluno-responsavel-select');
+    await call('Input.dispatchKeyEvent', {type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
+    await call('Input.dispatchKeyEvent', {type:'keyUp',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
+    await until(`!document.querySelector('.modal-backdrop') && document.activeElement === window.th33Opener`);
+  }
+  // I1: an enabled opener during Bootstrap's hide transition used to start a
+  // load whose show() was ignored, leaving the section permanently locked.
+  await click(th33Action);
+  await until(`document.activeElement.id === 'aluno-responsavel-cancel' && document.querySelector('#aluno-responsavel-form').getAttribute('aria-busy') === 'false'`);
+  const beforeClosing = requests.length;
+  const closingState = await evaluate(`(() => {
+    const modal=document.querySelector('#aluno-responsavel-modal');
+    window.th33TransitionOpener=document.querySelector(${JSON.stringify(th33Action)});
+    document.querySelector('#aluno-responsavel-cancel').click();
+    const next=document.querySelector('#alunos-rows tr:last-child button[data-action="responsavel"]');
+    const state={transitioning:window.bootstrap.Modal.getInstance(modal)._isTransitioning,
+      nextDisabled:next.disabled,refreshDisabled:document.querySelector('#refresh-alunos').disabled};
+    next.click();return state;
+  })()`);
+  assert.equal(closingState.transitioning,true);
+  assert.equal(closingState.nextDisabled,true);
+  assert.equal(closingState.refreshDisabled,true);
+  await until(`!document.querySelector('.modal-backdrop') && !document.querySelector('#refresh-alunos').disabled`);
+  assert.equal(requests.length,beforeClosing,'I1: closing must not start B GETs');
+  assert.equal(await evaluate(`document.activeElement === window.th33TransitionOpener && document.querySelector('#aluno-responsavel-form').getAttribute('aria-busy') === 'false'`),true);
+  const th33StudentB=await evaluate(`document.querySelector('#alunos-rows tr:last-child td:first-child').textContent`);
+  const beforeReopen=requests.length;
+  await click('#alunos-rows tr:last-child button[data-action="responsavel"]');
+  await until(`document.activeElement.id === 'aluno-responsavel-cancel' && document.querySelector('#aluno-responsavel-form').getAttribute('aria-busy') === 'false'`);
+  assert.equal(requests.length,beforeReopen+4);
+  assert.equal(await evaluate(`document.querySelector('#aluno-responsavel-aluno').textContent`),th33StudentB);
+  assert.equal(await evaluate(`document.querySelector('#aluno-responsavel-modal').classList.contains('show')`),true);
+  await click('#aluno-responsavel-modal .btn-close');
+  await until(`!document.querySelector('.modal-backdrop') && !document.querySelector('#refresh-alunos').disabled`);
+  await click(th33Action);
+  await until(`document.querySelector('#aluno-responsavel-form').getAttribute('aria-busy') === 'false'`);
+  await setInstructor(th33Instructors[0].id);
+  const beforeDefine = requests.length;
+  await click('#aluno-responsavel-submit');
+  await until(`document.querySelector('#aluno-responsavel-feedback').textContent.includes('definido com sucesso')`);
+  assert.equal(requests.length, beforeDefine+1, 'Successful definition adds only one PUT');
+  await setInstructor(th33Instructors[0].id);
+  assert.equal(await evaluate(`document.querySelector('#aluno-responsavel-submit').disabled`), true);
+  await click('#aluno-responsavel-cancel');
+  await until(`!document.querySelector('.modal-backdrop')`);
+  const th33HistoricalUser=await evaluate(`import('/js/api.js').then(api => api.getJson('/api/usuarios/${th33Instructors[0].usuario_id}?academia_id=1'))`);
+  assert.notEqual(th33Instructors[0].id,th33HistoricalUser.id);
+  await evaluate(`import('/js/api.js').then(api => api.putJson('/api/usuarios/${th33Instructors[0].usuario_id}/status', {ativo:false}))`);
+  await click(th33Action);
+  await until(`document.querySelector('#aluno-responsavel-form').getAttribute('aria-busy') === 'false'`);
+  assert.match(await evaluate(`document.querySelector('#aluno-responsavel-history').textContent`), /Indisponível para nova seleção/);
+  assert.equal(await evaluate(`Array.from(document.querySelector('#aluno-responsavel-select').options).some(option => option.value === ${JSON.stringify(th33Instructors[0].id)})`), false);
+  assert.equal(await evaluate(`document.querySelector('#aluno-responsavel-current').textContent.includes('Nenhum')`), false);
+  assert.equal(await evaluate(`document.querySelector('#aluno-responsavel-current').textContent`),`${th33HistoricalUser.nome} — ${th33HistoricalUser.email}`);
+  assert.equal(await evaluate(`Array.from(document.querySelector('#aluno-responsavel-select').options).some(option => option.value === ${JSON.stringify(th33Instructors[1].id)})`),true);
+  await screenshot('aluno-instrutor-historico-375');
+  await setInstructor(th33Instructors[1].id);
+  await click('#aluno-responsavel-submit');
+  await until(`document.querySelector('#aluno-responsavel-feedback').textContent.includes('alterado com sucesso')`);
+  assert.equal(await evaluate(`document.querySelector('#aluno-responsavel-modal img') === null && window.th32Injected !== true`), true);
+  assert.equal(await evaluate(`document.documentElement.scrollWidth <= innerWidth && document.querySelector('#aluno-responsavel-modal').scrollWidth <= innerWidth`), true);
+  await screenshot('aluno-instrutor-alterado-375');
+  await click('#aluno-responsavel-cancel');
+  await until(`!document.querySelector('.modal-backdrop')`);
+  await evaluate(`import('/js/api.js').then(api => api.putJson('/api/usuarios/${th33Instructors[0].usuario_id}/status', {ativo:true}))`);
+  await click(th33Action);
+  await until(`document.querySelector('#aluno-responsavel-form').getAttribute('aria-busy') === 'false'`);
+  await setInstructor(th33Instructors[0].id);
+  events.set('Fetch.requestPaused', []);
+  let th33Write;
+  on('Fetch.requestPaused', async ({requestId}) => { th33Write=requestId; });
+  await call('Fetch.enable', {patterns:[{urlPattern:`${base}/api/alunos/*/instrutor`,requestStage:'Request'}]});
+  await click('#aluno-responsavel-submit');
+  await until(`document.querySelector('#aluno-responsavel-submit').disabled && document.querySelector('#aluno-responsavel-feedback').textContent === 'Salvando...'`);
+  const beforeDouble = requests.length;
+  await click('#aluno-responsavel-submit');
+  assert.equal(requests.length,beforeDouble);
+  await call('Input.dispatchKeyEvent', {type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
+  await call('Input.dispatchKeyEvent', {type:'keyUp',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
+  assert.equal(await evaluate(`document.querySelector('#aluno-responsavel-modal').classList.contains('show') && document.querySelector('#aluno-responsavel-cancel').disabled`), true);
+  for(let index=0; !th33Write && index<100; index++) await delay(20);
+  assert(th33Write);
+  await call('Fetch.continueRequest', {requestId:th33Write});
+  await until(`document.querySelector('#aluno-responsavel-feedback').textContent.includes('alterado com sucesso')`);
+  await call('Fetch.disable');
+  await click('#aluno-responsavel-cancel');
+  await until(`!document.querySelector('.modal-backdrop')`);
+  console.log('TH-33 Chrome passed: closing/hidden/reopen lifecycle, real definition/replacement/historical identity, four-GET modal, one-PUT save, XSS, double-submit/Escape write lock, keyboard/focus return, desktop and 375x812 without global overflow.');
   assert.equal(requests.some((url) => /^https?:/.test(url) && !url.startsWith(base + '/')), false, 'External request');
   assert.deepEqual(errors, [], 'Browser runtime exceptions');
   assert.deepEqual(interceptionErrors, [], 'Interception failures');
