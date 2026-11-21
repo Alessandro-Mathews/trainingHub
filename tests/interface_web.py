@@ -193,6 +193,8 @@ async function pageModule(name, replaceAcademias = false) {
     text = text.replace("'./academias.js'", JSON.stringify(stub));
     const alunosStub = 'data:text/javascript,export function initAlunos(){};export function visitAlunos(){}';
     text = text.replace("'./alunos.js'", JSON.stringify(alunosStub));
+    const instrutoresStub = 'data:text/javascript,export function initInstrutores(){};export function visitInstrutores(){}';
+    text = text.replace("'./instrutores.js'", JSON.stringify(instrutoresStub));
   }
   return import('data:text/javascript;base64,' + Buffer.from(text).toString('base64') + '#' + pageSequence++);
 }
@@ -345,6 +347,7 @@ def run(browser):
                 if migration.name != "001_initial_schema.sql":
                     db.executescript(migration.read_text(encoding="utf-8"))
             db.execute("INSERT INTO aluno(usuario_id) SELECT id FROM usuario WHERE email='aluno@example.test' AND academia_id=1")
+            db.execute("INSERT INTO instrutor(usuario_id) SELECT id FROM usuario WHERE email='instrutor@example.test' AND academia_id=1")
             db.commit()
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", 0))
@@ -401,6 +404,7 @@ def run(browser):
                     ("/js/api.js", "application/javascript"), ("/js/academias.js", "application/javascript"),
                     ("/js/login.js", "application/javascript"),
                     ("/js/alunos.js", "application/javascript"),
+                    ("/js/instrutores.js", "application/javascript"),
                     ("/vendor/bootstrap/bootstrap.min.css", "text/css"),
                     ("/vendor/bootstrap/bootstrap.bundle.min.js", "application/javascript"),
                     ("/images/traininghub-logo.png", "image/png"),
