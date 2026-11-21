@@ -120,6 +120,24 @@
     </main>
   </div>
   </div>
+  <div class="modal fade" id="aluno-responsavel-modal" tabindex="-1" aria-labelledby="aluno-responsavel-title" aria-describedby="aluno-responsavel-aluno" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable"><div class="modal-content">
+      <div class="modal-header"><h2 class="modal-title fs-5" id="aluno-responsavel-title">Instrutor responsável</h2><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Fechar instrutor responsável"></button></div>
+      <div class="modal-body">
+        <p>Aluno: <span id="aluno-responsavel-aluno"></span></p>
+        <p>Instrutor atual: <span id="aluno-responsavel-current"></span></p>
+        <p class="form-text" id="aluno-responsavel-history"></p>
+        <form id="aluno-responsavel-form" aria-busy="false">
+          <label class="form-label" for="aluno-responsavel-select">Novo instrutor</label>
+          <select class="form-select" id="aluno-responsavel-select" required disabled aria-describedby="aluno-responsavel-help aluno-responsavel-feedback"></select>
+          <p class="form-text" id="aluno-responsavel-help"></p>
+          <p id="aluno-responsavel-feedback" role="status" aria-live="polite" tabindex="-1"></p>
+          <div class="d-flex flex-wrap gap-2"><button class="btn btn-outline-secondary" id="aluno-responsavel-refresh" type="button">Atualizar dados</button><button class="btn btn-outline-secondary" id="aluno-responsavel-reconcile" type="button" hidden>Consultar responsável atual</button><button class="btn btn-primary" id="aluno-responsavel-submit" type="submit" disabled>Definir instrutor</button></div>
+        </form>
+      </div>
+      <div class="modal-footer"><button class="btn btn-outline-secondary" id="aluno-responsavel-cancel" type="button" data-bs-dismiss="modal">Cancelar</button></div>
+    </div></div>
+  </div>
   <div class="modal fade" id="aluno-create-modal" tabindex="-1" aria-labelledby="aluno-create-title" aria-hidden="true">
     <div class="modal-dialog modal-dialog-scrollable"><div class="modal-content">
       <div class="modal-header"><h2 class="modal-title fs-5" id="aluno-create-title">Cadastrar aluno</h2><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Fechar cadastro"></button></div>

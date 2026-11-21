@@ -97,6 +97,7 @@ jobs:
           python tests/interface_web.py
           python tests/alunos_interface.py
           python tests/instrutores_interface.py
+          python tests/aluno_instrutor_interface.py
           python tests/usuario_integration.py
           python tests/perfil_integration.py
           python tests/auth_integration.py

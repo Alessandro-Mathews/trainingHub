@@ -18,14 +18,20 @@ let selectedUser = null;
 let desiredStatus = false;
 let allowHide = false;
 const openers = new Map();
+let responsavelGeneration = 0;
+let responsavel = { aluno: null };
+let responsavelClosing = false;
+const unconfirmedResponsaveis = new Map();
 
 function text(id, value) { element(id).textContent = value; }
 
 function sessionExpired(error) {
   if (error.status !== 401) return false;
   document.getElementById('authenticated-app').hidden = true;
+  submitting = false;
   element('aluno-create-password').value = '';
-  for (const name of ['create', 'edit', 'status']) hideModal(name);
+  unconfirmedResponsaveis.clear();
+  for (const name of ['create', 'edit', 'status', 'responsavel']) hideModal(name);
   location.replace('/login.html');
   return true;
 }
@@ -108,7 +114,7 @@ function renderOptions() {
 }
 
 function controls() {
-  const locked = loading || submitting;
+  const locked = loading || submitting || responsavelClosing || responsavel.aluno !== null;
   const canCreate = snapshotReady && profile !== null && !profilesLoading;
   element('refresh-alunos').disabled = locked || profilesLoading;
   element('retry-alunos').disabled = locked || profilesLoading;
@@ -139,6 +145,7 @@ function controls() {
   for (const action of element('alunos-rows').querySelectorAll('button')) {
     action.disabled = locked || uncertain || action.dataset.unavailable === 'true';
   }
+  responsavelControls();
 }
 
 function render() {
@@ -161,6 +168,10 @@ function render() {
     group.className = 'd-flex flex-wrap gap-2';
     const edit = button('Editar', () => openEdit(user, edit));
     const change = button(user?.ativo === false ? 'Ativar' : 'Desativar', () => openStatus(user, change));
+    change.dataset.action = 'status';
+    const instructor = button('Instrutor responsável', () => openResponsavel(aluno, instructor));
+    instructor.dataset.action = 'responsavel';
+    instructor.setAttribute('aria-label', `Instrutor responsável por ${name}`);
     edit.setAttribute('aria-label', `Editar conta de ${name}`);
     change.setAttribute('aria-label', `${user?.ativo === false ? 'Ativar' : 'Desativar'} conta de ${name}`);
     edit.dataset.unavailable = String(!user);
@@ -174,7 +185,7 @@ function render() {
       change.setAttribute('aria-describedby', explanation.id);
       actions.append(explanation);
     }
-    group.append(edit, change);
+    group.append(edit, change, instructor);
     actions.append(group);
     row.append(actions);
     rows.append(row);
@@ -239,7 +250,7 @@ async function loadProfiles() {
 }
 
 export async function loadAlunos() {
-  if (!context || loading || submitting || profilesLoading) return;
+  if (!context || loading || submitting || profilesLoading || responsavel.aluno) return;
   visited = true;
   loading = true;
   snapshotReady = false;
@@ -286,7 +297,7 @@ export function visitAlunos() {
 
 function showModal(name, opener, focus) {
   const recovering = name === 'create' && (pendingUser !== null || accountUnconfirmed);
-  if (loading || submitting || (!snapshotReady && !recovering)) return;
+  if (loading || submitting || (responsavel.aluno && name !== 'responsavel') || (!snapshotReady && !recovering)) return;
   openers.set(name, opener);
   const modal = element(`aluno-${name}-modal`);
   modal.addEventListener('shown.bs.modal', () => element(focus).focus(), { once: true });
@@ -330,6 +341,245 @@ function openStatus(user, opener) {
   text('aluno-status-feedback', '');
   text('aluno-status-submit', desiredStatus ? 'Ativar conta' : 'Desativar conta');
   showModal('status', opener, 'aluno-status-submit');
+}
+
+function responsavelError(error) {
+  return ({ 400: 'Seleção ou cadastro não está elegível. Atualize os dados.',
+    403: 'Sua conta não tem permissão para esta operação.',
+    404: 'Aluno ou instrutor indisponível. Atualize os dados.',
+    409: 'Os dados mudaram. Atualize antes de tentar novamente.' })[error.status] || errorMessage(error);
+}
+
+function readResponsavel(data) {
+  if (!data || Array.isArray(data) || Object.keys(data).length !== 1
+    || !Object.hasOwn(data, 'instrutor_id')
+    || (data.instrutor_id !== null && parseId(data.instrutor_id) === null)) throw new ApiError(502);
+  return data.instrutor_id;
+}
+
+function eligibleResponsavelUser(state, user, role) {
+  const perfil = user && state.profiles.get(user.perfil_id);
+  return !!user && validUser(user) && user.ativo === true
+    && perfil?.ativo === 1 && perfil.nome === role;
+}
+
+function selectedResponsavel(state) {
+  const id = parseId(element('aluno-responsavel-select').value);
+  const candidate = id && state.candidates?.get(id);
+  return candidate && candidate.id === id && state.instrutores.get(id) === candidate
+    && eligibleResponsavelUser(state, state.accounts.get(candidate.usuario_id), 'Instrutor') ? candidate : null;
+}
+
+function responsavelControls() {
+  const state = responsavel;
+  const pending = !!state.aluno && unconfirmedResponsaveis.has(state.aluno.id);
+  const locked = submitting || !!state.loading || responsavelClosing;
+  const ready = !!state.ready && state.current !== undefined && state.eligible && !state.needsRefresh && !pending;
+  element('aluno-responsavel-form').setAttribute('aria-busy', String(locked));
+  for (const control of element('aluno-responsavel-modal').querySelectorAll('button')) control.disabled = submitting || responsavelClosing;
+  element('aluno-responsavel-refresh').disabled = locked || pending;
+  element('aluno-responsavel-reconcile').hidden = !pending;
+  element('aluno-responsavel-reconcile').disabled = locked;
+  element('aluno-responsavel-select').disabled = locked || !ready || !state.candidates?.size;
+  const selected = state.aluno && selectedResponsavel(state);
+  element('aluno-responsavel-submit').disabled = locked || !ready || !selected || selected.id === state.current;
+  text('aluno-responsavel-submit', state.current === null ? 'Definir instrutor' : 'Alterar instrutor');
+}
+
+function renderResponsavel() {
+  const state = responsavel;
+  if (!state.aluno) return;
+  const current = state.instrutores?.get(state.current);
+  const account = current && state.accounts?.get(current.usuario_id);
+  const aluno = state.accounts?.get(state.aluno.usuario_id);
+  if (aluno) text('aluno-responsavel-aluno', aluno.nome);
+  text('aluno-responsavel-current', state.current === undefined ? 'Responsável não disponível.'
+    : state.current === null ? 'Nenhum instrutor definido' : account ? `${account.nome} — ${account.email}`
+      : 'Dados do responsável indisponíveis.');
+  text('aluno-responsavel-history', state.current && state.ready && !state.candidates.has(state.current)
+    ? 'Indisponível para nova seleção' : '');
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = 'Selecione um instrutor';
+  const options = [placeholder];
+  for (const candidate of state.candidates?.values() || []) {
+    const user = state.accounts.get(candidate.usuario_id);
+    const option = document.createElement('option');
+    option.value = candidate.id;
+    option.textContent = `${user.nome} — ${user.email}`;
+    options.push(option);
+  }
+  element('aluno-responsavel-select').replaceChildren(...options);
+  element('aluno-responsavel-select').value = '';
+  text('aluno-responsavel-help', !state.ready ? 'Lista de instrutores indisponível. Atualize os dados.'
+    : !state.eligible ? 'O cadastro do aluno não está elegível para alteração do responsável.'
+      : !state.candidates.size ? 'Nenhum instrutor válido disponível.'
+        : 'Selecione um instrutor ativo da academia. Não é possível remover o responsável.');
+  controls();
+}
+
+function clearResponsavel() {
+  responsavelGeneration++;
+  responsavel = { aluno: null };
+  responsavelClosing = false;
+  element('aluno-responsavel-select').replaceChildren();
+  element('aluno-responsavel-select').value = '';
+  for (const field of ['aluno', 'current', 'history', 'help', 'feedback']) text(`aluno-responsavel-${field}`, '');
+  controls();
+}
+
+function openResponsavel(aluno, opener) {
+  if (loading || submitting || responsavelClosing || uncertain || !snapshotReady || responsavel.aluno) return;
+  responsavel = { aluno: { id: aluno.id, usuario_id: aluno.usuario_id }, generation: ++responsavelGeneration,
+    current: undefined, ready: false, candidates: new Map() };
+  text('aluno-responsavel-aluno', users.get(aluno.usuario_id)?.nome || 'Dados do aluno indisponíveis');
+  text('aluno-responsavel-current', 'Carregando responsável...');
+  text('aluno-responsavel-history', '');
+  text('aluno-responsavel-help', 'Carregando instrutores...');
+  text('aluno-responsavel-feedback', '');
+  element('aluno-responsavel-select').replaceChildren();
+  element('aluno-responsavel-select').value = '';
+  showModal('responsavel', opener, 'aluno-responsavel-cancel');
+  return loadResponsavel(true);
+}
+
+function responsavelOperation(state) {
+  const generation = state.generation;
+  const alunoId = state.aluno.id;
+  return () => responsavelGeneration === generation && responsavel === state && responsavel.aluno?.id === alunoId;
+}
+
+function observedResponsavel(state, observed, desired) {
+  state.current = observed;
+  unconfirmedResponsaveis.delete(state.aluno.id);
+  state.needsRefresh = observed !== desired;
+  renderResponsavel();
+  text('aluno-responsavel-feedback', observed === desired
+    ? 'Responsável atual confirmado após consulta.'
+    : 'O responsável observado é diferente do solicitado. Atualize os dados e escolha novamente antes de salvar.');
+}
+
+async function loadResponsavel(opening = false) {
+  const state = responsavel;
+  if (!state.aluno || state.loading || submitting || responsavelClosing || (unconfirmedResponsaveis.has(state.aluno.id) && !opening)) return;
+  const active = responsavelOperation(state);
+  state.loading = true;
+  state.ready = false;
+  state.needsRefresh = true;
+  state.instrutores = new Map();
+  state.accounts = new Map();
+  state.profiles = new Map();
+  state.candidates = new Map();
+  text('aluno-responsavel-current', 'Carregando responsável...');
+  text('aluno-responsavel-help', 'Carregando instrutores...');
+  text('aluno-responsavel-feedback', '');
+  element('aluno-responsavel-select').replaceChildren();
+  element('aluno-responsavel-select').value = '';
+  controls();
+  const results = await Promise.allSettled([
+    getJson(`/api/alunos/${state.aluno.id}/instrutor`), getJson('/api/instrutores'),
+    getJson(`/api/usuarios?academia_id=${context.academiaId}`), getJson('/api/perfis'),
+  ]);
+  if (!active()) return;
+  try {
+    const expired = results.find((item) => item.status === 'rejected' && item.reason.status === 401);
+    if (expired) { sessionExpired(expired.reason); return; }
+    let failure;
+    state.current = undefined;
+    try {
+      if (results[0].status === 'rejected') throw results[0].reason;
+      state.current = readResponsavel(results[0].value);
+    } catch (error) { failure = error; }
+    try {
+      const metadata = results.slice(1);
+      const rejected = metadata.find((item) => item.status === 'rejected');
+      if (rejected) throw rejected.reason;
+      const [records, accounts, profiles] = metadata.map((item) => item.value);
+      if (!Array.isArray(records) || !records.every((item) => item && parseId(item.id) !== null
+        && parseId(item.usuario_id) !== null && typeof item.criado_em === 'string')
+        || !Array.isArray(accounts) || !accounts.every(validUser)
+        || !Array.isArray(profiles) || !profiles.every((item) => item && parseId(item.id) !== null
+          && typeof item.nome === 'string' && [0, 1].includes(item.ativo))
+        || [records, accounts, profiles].some((items) => new Set(items.map((item) => item.id)).size !== items.length)
+        || new Set(records.map((item) => item.usuario_id)).size !== records.length) throw new ApiError(502);
+      state.instrutores = new Map(records.map((item) => [item.id, item]));
+      state.accounts = new Map(accounts.map((item) => [item.id, item]));
+      state.profiles = new Map(profiles.map((item) => [item.id, item]));
+      state.candidates = new Map(records.filter((item) => eligibleResponsavelUser(state,
+        state.accounts.get(item.usuario_id), 'Instrutor')).map((item) => [item.id, item]));
+      state.eligible = eligibleResponsavelUser(state, state.accounts.get(state.aluno.usuario_id), 'Aluno');
+      state.ready = true;
+    } catch (error) { failure ||= error; }
+    state.needsRefresh = !!failure;
+    renderResponsavel();
+    if (failure) text('aluno-responsavel-feedback', responsavelError(failure));
+    else if (unconfirmedResponsaveis.has(state.aluno.id)) {
+      observedResponsavel(state, state.current, unconfirmedResponsaveis.get(state.aluno.id));
+    }
+  } finally {
+    if (active()) { state.loading = false; controls(); }
+  }
+}
+
+async function reconcileResponsavel(state = responsavel) {
+  const active = responsavelOperation(state);
+  const desired = unconfirmedResponsaveis.get(state.aluno.id);
+  try {
+    const observed = readResponsavel(await getJson(`/api/alunos/${state.aluno.id}/instrutor`));
+    if (active()) observedResponsavel(state, observed, desired);
+  } catch (error) {
+    if (active() && !sessionExpired(error)) {
+      state.needsRefresh = true;
+      text('aluno-responsavel-feedback', `Não foi possível confirmar a alteração. Consulte o responsável atual. ${responsavelError(error)}`);
+    }
+  }
+}
+
+async function retryResponsavel() {
+  if (!responsavel.aluno || submitting || responsavelClosing || responsavel.loading || !unconfirmedResponsaveis.has(responsavel.aluno.id)) return;
+  const state = responsavel;
+  const active = responsavelOperation(state);
+  submitting = true;
+  controls();
+  text('aluno-responsavel-feedback', 'Consultando o responsável atual...');
+  try { await reconcileResponsavel(state); }
+  finally { if (active()) { submitting = false; controls(); } }
+}
+
+async function submitResponsavel(event) {
+  event.preventDefault();
+  const state = responsavel;
+  if (!state.aluno || submitting || state.loading || !state.ready || state.needsRefresh
+    || responsavelClosing || state.current === undefined || unconfirmedResponsaveis.has(state.aluno.id)
+    || !eligibleResponsavelUser(state, state.accounts.get(state.aluno.usuario_id), 'Aluno')) return;
+  const candidate = selectedResponsavel(state);
+  if (!candidate) { operationFeedback('responsavel', 'Selecione um instrutor válido da lista.'); return; }
+  if (candidate.id === state.current) return;
+  const active = responsavelOperation(state);
+  const previous = state.current;
+  submitting = true;
+  unconfirmedResponsaveis.set(state.aluno.id, candidate.id);
+  controls();
+  text('aluno-responsavel-feedback', 'Salvando...');
+  try {
+    const saved = readResponsavel(await putJson(`/api/alunos/${state.aluno.id}/instrutor`, { instrutor_id: candidate.id }));
+    if (!active()) return;
+    if (saved !== candidate.id) throw new ApiError(502);
+    state.current = saved;
+    unconfirmedResponsaveis.delete(state.aluno.id);
+    renderResponsavel();
+    operationFeedback('responsavel', previous === null ? 'Instrutor definido com sucesso.' : 'Instrutor alterado com sucesso.');
+  } catch (error) {
+    if (!active() || sessionExpired(error)) return;
+    if (ambiguous(error)) {
+      text('aluno-responsavel-feedback', 'Não foi possível confirmar a alteração. Consulte o responsável atual.');
+      await reconcileResponsavel(state);
+    } else {
+      unconfirmedResponsaveis.delete(state.aluno.id);
+      state.needsRefresh = true;
+      operationFeedback('responsavel', responsavelError(error));
+    }
+  } finally { if (active()) { submitting = false; controls(); } }
 }
 
 function validFields(prefix, password = false) {
@@ -499,10 +749,22 @@ export function initAlunos(authContext) {
     return updateUser('edit', { nome: element('aluno-edit-name').value, email: element('aluno-edit-email').value });
   });
   element('aluno-status-submit').addEventListener('click', () => updateUser('status', { ativo: desiredStatus }));
-  for (const name of ['create', 'edit', 'status']) {
+  element('aluno-responsavel-select').addEventListener('change', responsavelControls);
+  element('aluno-responsavel-form').addEventListener('submit', submitResponsavel);
+  element('aluno-responsavel-refresh').addEventListener('click', () => loadResponsavel());
+  element('aluno-responsavel-reconcile').addEventListener('click', retryResponsavel);
+  for (const name of ['create', 'edit', 'status', 'responsavel']) {
     const modal = element(`aluno-${name}-modal`);
-    modal.addEventListener('hide.bs.modal', (event) => { if (submitting && !allowHide) event.preventDefault(); });
+    modal.addEventListener('hide.bs.modal', (event) => {
+      if (submitting && !allowHide) event.preventDefault();
+      else if (name === 'responsavel') {
+        responsavelClosing = true;
+        responsavelGeneration++;
+        controls();
+      }
+    });
     modal.addEventListener('hidden.bs.modal', () => {
+      if (name === 'responsavel') clearResponsavel();
       element('aluno-create-password').value = '';
       const opener = openers.get(name);
       (opener?.isConnected && !opener.disabled ? opener : element('create-aluno').disabled
