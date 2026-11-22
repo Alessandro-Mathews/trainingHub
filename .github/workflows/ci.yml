@@ -105,3 +105,4 @@ jobs:
           python tests/aluno_integration.py
           python tests/instrutor_integration.py
           python tests/aluno_instrutor_integration.py
+          python tests/alunos_instrutores_authorization_integration.py
