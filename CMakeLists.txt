@@ -23,6 +23,7 @@ add_executable(traininghub
     src/controllers/UsuarioController.cpp
     src/controllers/AlunoController.cpp
     src/controllers/InstrutorController.cpp
+    src/controllers/PlanoController.cpp
 
     src/repositories/AcademiaRepository.cpp
     src/repositories/PerfilRepository.cpp
@@ -30,6 +31,7 @@ add_executable(traininghub
     src/repositories/AuthContextRepository.cpp
     src/repositories/AlunoRepository.cpp
     src/repositories/InstrutorRepository.cpp
+    src/repositories/PlanoRepository.cpp
 
     src/services/AcademiaService.cpp
     src/services/PerfilService.cpp
@@ -37,6 +39,7 @@ add_executable(traininghub
     src/services/UsuarioService.cpp
     src/services/AlunoService.cpp
     src/services/InstrutorService.cpp
+    src/services/PlanoService.cpp
 
     src/security/SessionManager.cpp
     src/security/PasswordHasher.cpp
