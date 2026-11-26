@@ -11,6 +11,7 @@ import socket
 import sqlite3
 import subprocess
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -190,6 +191,23 @@ def run():
                     assert request("GET", path, client=gestor) == {"instrutor_id": None}
                     put()
                     assert request("GET", path) == {"instrutor_id": LARGE}
+
+                    # TH-35: DELETE is an unregistered route, so Drogon returns its HTML 404.
+                    # Keep this framework response separate from the JSON business-contract helper.
+                    before_delete = state()
+                    delete = urllib.request.Request(base + path, method="DELETE")
+                    try:
+                        deleted = admin.open(delete, timeout=20)
+                    except urllib.error.HTTPError as error:
+                        deleted = error
+                    with deleted:
+                        content = deleted.read()
+                        safe(content)
+                        assert deleted.code == 404, ("DELETE", path, deleted.code, content)
+                        checked += 1
+                    assert state() == before_delete, "Unsupported DELETE changed relationship"
+                    assert request("GET", path) == {"instrutor_id": LARGE}
+
                     put(LARGE + 1, client=gestor)
                     assert request("GET", path, client=gestor) == {"instrutor_id": LARGE + 1}
                     put(LARGE + 1)
@@ -201,6 +219,40 @@ def run():
                     assert set(request("GET", f"/api/alunos/{LARGE}")) == {"id", "usuario_id", "criado_em"}
                     assert all(set(row) == {"id", "usuario_id", "criado_em"}
                                for row in request("GET", "/api/alunos"))
+
+                    # TH-35: valid competing replacements serialize without a prescribed winner.
+                    concurrent_aluno = LARGE + 1
+                    concurrent_path = f"/api/alunos/{concurrent_aluno}/instrutor"
+                    assert request("GET", concurrent_path) == {"instrutor_id": LARGE + 1}
+                    before_replacements = state()
+                    before_records = sql("SELECT id,usuario_id,criado_em FROM aluno ORDER BY id")
+                    before_instructors = sql("SELECT * FROM instrutor ORDER BY id")
+                    replacement_clients = [login(), login(101)]
+                    replacements = [LARGE, 1]
+                    replacement_barrier = threading.Barrier(2)
+
+                    def concurrent_replace(index):
+                        replacement_barrier.wait(timeout=10)
+                        result = request("PUT", concurrent_path, {"instrutor_id": replacements[index]},
+                                         client=replacement_clients[index])
+                        assert result == {"instrutor_id": replacements[index]}
+                        return result["instrutor_id"]
+
+                    with ThreadPoolExecutor(max_workers=2) as pool:
+                        confirmed = list(pool.map(concurrent_replace, range(2)))
+                    assert set(confirmed) == set(replacements)
+                    final = request("GET", concurrent_path)["instrutor_id"]
+                    assert final in confirmed
+                    assert sql("SELECT al.instrutor_id,ua.academia_id,ui.academia_id FROM aluno al "
+                        "JOIN usuario ua ON ua.id=al.usuario_id JOIN instrutor i ON i.id=al.instrutor_id "
+                        "JOIN usuario ui ON ui.id=i.usuario_id WHERE al.id=?", (concurrent_aluno,)) == [(final, 1, 1)]
+                    assert [(identity, owner) for identity, owner in state() if identity != concurrent_aluno] == [
+                        (identity, owner) for identity, owner in before_replacements if identity != concurrent_aluno]
+                    assert sql("SELECT id,usuario_id,criado_em FROM aluno ORDER BY id") == before_records
+                    assert sql("SELECT * FROM instrutor ORDER BY id") == before_instructors
+                    assert sql("PRAGMA foreign_key_check") == []
+                    # Restore X so the later FK-loss fixture has no extra reference to instructor 1.
+                    put(LARGE + 1, url=concurrent_path)
 
                     for client, outside in [(admin, LARGE + 2), (gestor, LARGE + 2),
                                             (admin_b, LARGE), (gestor_b, LARGE)]:

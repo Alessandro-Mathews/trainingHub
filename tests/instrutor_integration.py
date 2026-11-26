@@ -99,11 +99,12 @@ def run():
             base = f"http://127.0.0.1:{port}"
             anonymous = urllib.request.build_opener()
 
-            def request(method, path, body=None, expected=200, client=None, with_status=False):
+            def request(method, path, body=None, expected=200, client=None, with_status=False,
+                        content_type="application/json"):
                 nonlocal checked
                 data = body if isinstance(body, bytes) else json.dumps(body).encode() if body is not None else None
                 req = urllib.request.Request(base + path, method=method, data=data,
-                                             headers={"Content-Type": "application/json"})
+                                             headers={"Content-Type": content_type})
                 try:
                     response = (client or admin).open(req, timeout=20)
                 except urllib.error.HTTPError as error:
@@ -216,6 +217,11 @@ def run():
                     converted_client = login(250)
                     request("GET", "/api/alunos", expected=403, client=converted_client)
                     request("GET", "/api/instrutores", expected=403, client=converted_client)
+
+                    # TH-35: an eligible account must not be registered through a non-JSON request.
+                    before_content_type = sql("SELECT * FROM instrutor ORDER BY id")
+                    request("POST", "/api/instrutores", b'{"usuario_id":202}', 400, content_type="text/plain")
+                    assert sql("SELECT * FROM instrutor ORDER BY id") == before_content_type
 
                     strict_cases = [b'{"usuario_id":202} {"academia_id":2}', b'{"usuario_id":202} null',
                         b'{"usuario_id":202} invalid', b'{"usuario_id":202 // comment\n}',
