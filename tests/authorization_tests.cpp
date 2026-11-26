@@ -14,13 +14,14 @@ int main()
             Operation::PerfisRead, Operation::PerfisManage, Operation::UsuariosRead, Operation::UsuariosCreate,
             Operation::AlunosCreate, Operation::AlunosRead, Operation::InstrutoresCreate, Operation::InstrutoresRead,
             Operation::AlunosInstrutorRead, Operation::AlunosInstrutorManage,
-            Operation::UsuariosUpdate, Operation::UsuariosManageStatus, Operation::PlanosRead, Operation::PlanosManage};
-        const bool access[5][16] = {
-            {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false},
-            {true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true},
-            {true, false, true, false, true, true, true, true, true, true, true, true, true, true, true, true},
-            {true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false},
-            {true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}
+            Operation::UsuariosUpdate, Operation::UsuariosManageStatus, Operation::PlanosRead, Operation::PlanosManage,
+            Operation::MatriculasRead, Operation::MatriculasManage};
+        const bool access[5][18] = {
+            {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false},
+            {true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true},
+            {true, false, true, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true},
+            {true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false},
+            {true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}
         };
         const bool assignments[5][5] = {
             {false, false, false, false, false},
