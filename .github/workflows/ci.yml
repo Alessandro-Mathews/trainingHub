@@ -107,3 +107,4 @@ jobs:
           python tests/aluno_instrutor_integration.py
           python tests/alunos_instrutores_authorization_integration.py
           python tests/plano_integration.py
+          python tests/matricula_integration.py
