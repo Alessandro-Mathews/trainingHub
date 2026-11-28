@@ -16,8 +16,19 @@ export function parseId(value) {
   return value;
 }
 
+export function parseCentavos(value) {
+  if (typeof value !== 'string' || !/^(?:0|[1-9][0-9]*)$/.test(value)) return null;
+  if (value.length > 19 || BigInt(value) > 9223372036854775807n) return null;
+  return value;
+}
+
+export function parseDuracao(value) { return parseId(value); }
+
+const exactFields = new Map([['valor_centavos', parseCentavos], ['duracao_dias', parseDuracao]]);
+
 // Parse ID number tokens before Number can round them. Other primitives retain
 // JSON.parse semantics. This is a grammar parser, not a text replacement pass.
+// Plano price/duration tokens also retain their exact decimal representation.
 export function parseJson(text) {
   let at = 0;
   const fail = () => { throw new SyntaxError('Invalid JSON response'); };
@@ -35,6 +46,12 @@ export function parseJson(text) {
     if (depth > 128) return fail();
     space();
     const char = text[at];
+    if (exactFields.has(key)) {
+      const match = /^(?:0|[1-9][0-9]*)/.exec(text.slice(at));
+      if (!match || exactFields.get(key)(match[0]) === null) return fail();
+      at += match[0].length;
+      return match[0];
+    }
     if (idKeys.has(key)) {
       if (key === 'instrutor_id' && text.slice(at, at + 4) === 'null') { at += 4; return null; }
       const match = /^[1-9][0-9]*/.exec(text.slice(at));
@@ -81,12 +98,13 @@ export function parseJson(text) {
 
 // Application DTOs are flat. Only validated ID strings may become raw JSON
 // numbers; all other fields use the native string escaping and scalar encoding.
+// The two exact Plano fields use the same validated raw-token path as IDs.
 export function serializeBody(dto) {
   if (!dto || Object.getPrototypeOf(dto) !== Object.prototype) throw new ApiError(400);
   return '{' + Object.entries(dto).map(([key, value]) => {
     let encoded;
-    if (idKeys.has(key)) {
-      encoded = parseId(value);
+    if (idKeys.has(key) || exactFields.has(key)) {
+      encoded = (exactFields.get(key) || parseId)(value);
       if (encoded === null) throw new ApiError(400);
     } else {
       if (!['string', 'boolean', 'number'].includes(typeof value) && value !== null) throw new ApiError(400);

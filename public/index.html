@@ -39,6 +39,7 @@
         <p class="nav-label modules-label">ADMINISTRAÇÃO</p>
         <a class="nav-item" href="#alunos" data-page="alunos"><span class="nav-symbol" aria-hidden="true">♙</span> Alunos</a>
         <a class="nav-item" href="#instrutores" data-page="instrutores"><span class="nav-symbol" aria-hidden="true">♙</span> Instrutores</a>
+        <a class="nav-item" href="#planos" data-page="planos"><span class="nav-symbol" aria-hidden="true">▤</span> Planos</a>
         <span class="nav-item unavailable" aria-disabled="true"><span class="nav-symbol" aria-hidden="true">♙</span> Usuários <small>Em breve</small></span>
         <span class="nav-item unavailable" aria-disabled="true"><span class="nav-symbol" aria-hidden="true">◇</span> Perfis <small>Em breve</small></span>
       </nav>
@@ -113,6 +114,26 @@
             <table class="table align-middle mb-0"><caption class="visually-hidden">Instrutores: nome, e-mail, situação da conta, cadastro como Instrutor e ações.</caption><thead><tr><th scope="col">Nome</th><th scope="col">E-mail</th><th scope="col">Situação da conta</th><th scope="col">Cadastro como Instrutor</th><th scope="col">Ações</th></tr></thead><tbody id="instrutores-rows"></tbody></table>
           </div>
           <div class="panel-footer">A situação exibida corresponde à conta do usuário.</div>
+        </div>
+      </section>
+      <section id="planos" aria-labelledby="planos-title" hidden>
+        <div class="page-heading">
+          <div><p class="eyebrow">GESTÃO</p><h1 id="planos-title">Planos</h1><p class="page-description">Gerencie os planos oferecidos pela sua academia.</p></div>
+          <div class="d-flex flex-wrap gap-2"><button class="btn btn-outline-secondary" id="refresh-planos" type="button">Atualizar</button><button class="btn btn-primary" id="create-plano" type="button" disabled>Novo plano</button></div>
+        </div>
+        <p id="planos-feedback" role="status" aria-live="polite" tabindex="-1"></p>
+        <div id="planos-uncertain" class="alert alert-warning" hidden>
+          <p id="planos-uncertain-message" role="status" aria-live="polite" tabindex="-1"></p>
+          <div class="d-flex flex-wrap gap-2"><button class="btn btn-outline-secondary" id="planos-reconcile" type="button">Verificar dados</button><button class="btn btn-outline-secondary" id="planos-resume" type="button" hidden>Encerrar tentativa e permitir nova operação</button></div>
+        </div>
+        <div class="panel" id="planos-panel" aria-busy="false">
+          <div class="panel-heading"><h2>Planos cadastrados</h2><span class="neutral-badge" id="planos-count">Não consultado</span></div>
+          <div id="planos-state" class="list-state" role="status" aria-live="polite"><p>Acesse esta seção para consultar os planos.</p></div>
+          <div id="planos-error" class="list-state" role="alert" hidden><h3 id="planos-error-title">Não foi possível carregar os planos.</h3><p id="planos-error-message"></p><button class="btn btn-primary" id="retry-planos" type="button">Tentar novamente</button></div>
+          <div id="planos-table-container" class="table-responsive" role="region" aria-label="Lista de planos" tabindex="0" hidden>
+            <table class="table planos-table align-middle mb-0"><caption class="visually-hidden">Planos: nome, descrição, valor em reais, duração em dias, status e ações.</caption><thead><tr><th scope="col">Nome</th><th scope="col">Descrição</th><th scope="col">Valor</th><th scope="col">Duração</th><th scope="col">Status</th><th scope="col">Ações</th></tr></thead><tbody id="planos-rows"></tbody></table>
+          </div>
+          <div class="panel-footer">Valores em reais · Duração em dias</div>
         </div>
       </section>
       <footer class="content-footer"><span>TrainingHub</span><span>Sua evolução em um só lugar</span></footer>
@@ -212,6 +233,39 @@
       <div class="modal-header"><h2 class="modal-title fs-5" id="instrutor-status-title">Confirmar situação da conta</h2><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Fechar confirmação"></button></div>
       <div class="modal-body"><p id="instrutor-status-question"></p><p id="instrutor-status-explanation"></p><p id="instrutor-status-feedback" role="status" aria-live="polite" tabindex="-1"></p></div>
       <div class="modal-footer"><button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary" id="instrutor-status-submit" type="button">Confirmar</button></div>
+    </div></div>
+  </div>
+  <div class="modal fade" id="plano-create-modal" tabindex="-1" aria-labelledby="plano-create-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable"><div class="modal-content">
+      <div class="modal-header"><h2 class="modal-title fs-5" id="plano-create-title">Novo plano</h2><button class="btn-close" type="button" data-bs-dismiss="modal" data-dismiss="true" aria-label="Fechar cadastro de plano"></button></div>
+      <div class="modal-body"><form id="plano-create-form" novalidate>
+        <div class="mb-3"><label class="form-label" for="plano-create-name">Nome</label><input class="form-control" id="plano-create-name" name="nome" required aria-describedby="plano-create-feedback"></div>
+        <div class="mb-3"><label class="form-label" for="plano-create-description">Descrição (opcional)</label><textarea class="form-control" id="plano-create-description" name="descricao" rows="3"></textarea></div>
+        <div class="mb-3"><label class="form-label" for="plano-create-value">Valor (R$)</label><input class="form-control" id="plano-create-value" name="valor" type="text" inputmode="decimal" required aria-describedby="plano-create-value-help plano-create-feedback"><p class="form-text" id="plano-create-value-help">Ex.: 99,90 ou 99.90. Sem milhares, até duas casas. Máximo: 92233720368547758,07. Zero é permitido.</p></div>
+        <div class="mb-3"><label class="form-label" for="plano-create-duration">Duração em dias</label><input class="form-control" id="plano-create-duration" name="duracao_dias" type="text" inputmode="numeric" required aria-describedby="plano-create-duration-help plano-create-feedback"><p class="form-text" id="plano-create-duration-help">Inteiro positivo, sem zeros iniciais, até 9223372036854775807.</p></div>
+        <p id="plano-create-feedback" role="status" aria-live="polite" tabindex="-1"></p><button class="btn btn-primary" id="plano-create-submit" type="submit">Cadastrar plano</button>
+      </form></div>
+      <div class="modal-footer"><button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal" data-dismiss="true">Cancelar</button></div>
+    </div></div>
+  </div>
+  <div class="modal fade" id="plano-edit-modal" tabindex="-1" aria-labelledby="plano-edit-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable"><div class="modal-content">
+      <div class="modal-header"><h2 class="modal-title fs-5" id="plano-edit-title">Editar plano</h2><button class="btn-close" type="button" data-bs-dismiss="modal" data-dismiss="true" aria-label="Fechar edição de plano"></button></div>
+      <div class="modal-body"><form id="plano-edit-form" novalidate>
+        <div class="mb-3"><label class="form-label" for="plano-edit-name">Nome</label><input class="form-control" id="plano-edit-name" name="nome" required aria-describedby="plano-edit-feedback"></div>
+        <div class="mb-3"><label class="form-label" for="plano-edit-description">Descrição (opcional)</label><textarea class="form-control" id="plano-edit-description" name="descricao" rows="3"></textarea></div>
+        <div class="mb-3"><label class="form-label" for="plano-edit-value">Valor (R$)</label><input class="form-control" id="plano-edit-value" name="valor" type="text" inputmode="decimal" required aria-describedby="plano-edit-value-help plano-edit-feedback"><p class="form-text" id="plano-edit-value-help">Ex.: 99,90 ou 99.90. Sem milhares, até duas casas. Máximo: 92233720368547758,07. Zero é permitido.</p></div>
+        <div class="mb-3"><label class="form-label" for="plano-edit-duration">Duração em dias</label><input class="form-control" id="plano-edit-duration" name="duracao_dias" type="text" inputmode="numeric" required aria-describedby="plano-edit-duration-help plano-edit-feedback"><p class="form-text" id="plano-edit-duration-help">Inteiro positivo, sem zeros iniciais, até 9223372036854775807.</p></div>
+        <p id="plano-edit-feedback" role="status" aria-live="polite" tabindex="-1"></p><button class="btn btn-primary" id="plano-edit-submit" type="submit">Salvar alterações</button>
+      </form></div>
+      <div class="modal-footer"><button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal" data-dismiss="true">Cancelar</button></div>
+    </div></div>
+  </div>
+  <div class="modal fade" id="plano-status-modal" tabindex="-1" aria-labelledby="plano-status-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable"><div class="modal-content">
+      <div class="modal-header"><h2 class="modal-title fs-5" id="plano-status-title">Confirmar status do plano</h2><button class="btn-close" type="button" data-bs-dismiss="modal" data-dismiss="true" aria-label="Fechar confirmação de status"></button></div>
+      <div class="modal-body"><p id="plano-status-question"></p><p id="plano-status-explanation"></p><p id="plano-status-feedback" role="status" aria-live="polite" tabindex="-1"></p></div>
+      <div class="modal-footer"><button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal" data-dismiss="true">Cancelar</button><button class="btn btn-primary" id="plano-status-submit" type="button">Confirmar</button></div>
     </div></div>
   </div>
 </body>

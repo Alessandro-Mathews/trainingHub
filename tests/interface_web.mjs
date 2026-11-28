@@ -591,6 +591,102 @@ try {
   await click('#aluno-responsavel-cancel');
   await until(`!document.querySelector('.modal-backdrop')`);
   console.log('TH-33 Chrome passed: closing/hidden/reopen lifecycle, real definition/replacement/historical identity, four-GET modal, one-PUT save, XSS, double-submit/Escape write lock, keyboard/focus return, desktop and 375x812 without global overflow.');
+  // TH-39 uses the delivered forms and the real Planos API in this isolated database.
+  await viewport(1440);
+  await click('[data-page="planos"]');
+  await until(`!document.querySelector('#planos').hidden && document.querySelector('#planos-panel').getAttribute('aria-busy') === 'false'`);
+  assert.equal(await evaluate(`document.title`), 'Planos | TrainingHub');
+  assert.equal(await evaluate(`document.activeElement.id`), 'main-content');
+  assert.match(await evaluate(`document.querySelector('#planos-state').textContent`), /Nenhum plano cadastrado/);
+  await evaluate(`(() => {
+    window.th39ModalWrites = [];
+    window.th39OriginalFetch = window.fetch;
+    window.fetch = function(input, options) {
+      if (['POST','PUT'].includes(options?.method) && String(input).startsWith('/api/planos')) window.th39ModalWrites.push(options.method);
+      return window.th39OriginalFetch.apply(this, arguments);
+    };
+  })()`);
+  async function cancelPlanoDuringTransition(kind, opener, escape = false) {
+    await click(opener);
+    await until(`!document.querySelector('#plano-${kind}-submit').disabled`);
+    const before = await evaluate(`window.th39ModalWrites.length`);
+    await evaluate(`(() => {
+      const kind = ${JSON.stringify(kind)}, modal = document.getElementById('plano-'+kind+'-modal');
+      if (kind === 'create') {
+        for (const [field,value] of [['name','Cancelado'],['value','99,90'],['duration','30']]) document.getElementById('plano-create-'+field).value=value;
+      }
+      window.th39DuringHide = null;
+      modal.addEventListener('hide.bs.modal', () => queueMicrotask(() => {
+        const submit = document.getElementById('plano-'+kind+'-submit');
+        window.th39DuringHide = {disabled:submit.disabled, visible:modal.style.display !== 'none'};
+        const target = kind === 'status' ? submit : document.getElementById('plano-'+kind+'-form');
+        target.dispatchEvent(new Event(kind === 'status' ? 'click' : 'submit', {bubbles:true,cancelable:true}));
+      }), {once:true});
+    })()`);
+    if (escape) {
+      await call('Input.dispatchKeyEvent', {type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
+      await call('Input.dispatchKeyEvent', {type:'keyUp',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
+    } else await click(`#plano-${kind}-modal .modal-footer [data-bs-dismiss="modal"]`);
+    await until(`!document.querySelector('.modal-backdrop') && document.querySelector('#planos-panel').getAttribute('aria-busy') === 'false'`);
+    assert.deepEqual(await evaluate(`window.th39DuringHide`), {disabled:true,visible:true});
+    assert.equal(await evaluate(`window.th39ModalWrites.length`), before, `${kind} wrote after cancellation`);
+    assert.equal(await evaluate(`document.querySelector('#refresh-planos').disabled || document.querySelector('#create-plano').disabled`), false);
+    assert.equal(await evaluate(`document.activeElement === document.querySelector(${JSON.stringify(opener)})`), true);
+  }
+  await cancelPlanoDuringTransition('create', '#create-plano');
+  await cancelPlanoDuringTransition('create', '#create-plano', true);
+  await click('#create-plano');
+  await until(`document.querySelector('#plano-create-modal').classList.contains('show') && document.activeElement.id === 'plano-create-name'`);
+  await call('Input.dispatchKeyEvent', {type:'keyDown',key:'Tab',code:'Tab',windowsVirtualKeyCode:9});
+  await call('Input.dispatchKeyEvent', {type:'keyUp',key:'Tab',code:'Tab',windowsVirtualKeyCode:9});
+  assert.equal(await evaluate(`document.activeElement.id`), 'plano-create-description');
+  const th39Name = '<img src=x onerror="window.th39Injected=true"> Plano TH39';
+  const th39Description = '<script>window.th39Injected=true</script> Descrição completa\n' + 'conteúdo '.repeat(90);
+  await evaluate(`(() => {
+    for (const [field,value] of ${JSON.stringify([['name',th39Name],['description',th39Description],['value','99,90'],['duration','30']])}) {
+      const input=document.getElementById('plano-create-'+field); input.value=value; input.dispatchEvent(new Event('input',{bubbles:true}));
+    }
+  })()`);
+  await click('#plano-create-submit');
+  await until(`!document.querySelector('.modal-backdrop') && document.querySelector('#planos-feedback').textContent.includes('cadastrado com sucesso') && document.querySelector('#planos-panel').getAttribute('aria-busy') === 'false'`);
+  assert.equal(await evaluate(`document.querySelectorAll('#planos-rows tr').length`), 1);
+  assert.equal(await evaluate(`document.querySelectorAll('#planos-rows img, #planos-rows script').length`), 0);
+  assert.equal(await evaluate(`window.th39Injected === undefined`), true);
+  assert.match(await evaluate(`document.querySelector('#planos-rows').textContent`), /R\$ 99,90/);
+  await cancelPlanoDuringTransition('edit', '#planos-rows button[aria-label^="Editar plano"]');
+  await cancelPlanoDuringTransition('edit', '#planos-rows button[aria-label^="Editar plano"]', true);
+  await cancelPlanoDuringTransition('status', '#planos-rows button[aria-label^="Desativar plano"]');
+  await cancelPlanoDuringTransition('status', '#planos-rows button[aria-label^="Desativar plano"]', true);
+  await click('#planos-rows button[aria-label^="Desativar plano"]');
+  await until(`!document.querySelector('#plano-status-submit').disabled && document.querySelector('#plano-status-modal').classList.contains('show')`);
+  await click('#plano-status-submit');
+  await until(`!document.querySelector('.modal-backdrop') && document.querySelector('#planos-feedback').textContent.includes('desativado com sucesso') && !document.querySelector('#planos-rows button[aria-label^="Editar plano"]').disabled`);
+  await click('#planos-rows button[aria-label^="Editar plano"]');
+  await until(`!document.querySelector('#plano-edit-submit').disabled && document.activeElement.id === 'plano-edit-name'`);
+  assert.equal(await evaluate(`document.querySelector('#plano-edit-description').value`), th39Description);
+  await evaluate(`document.querySelector('#plano-edit-value').value='92233720368547758,07';document.querySelector('#plano-edit-duration').value='9223372036854775807';`);
+  await click('#plano-edit-submit');
+  await until(`!document.querySelector('.modal-backdrop') && document.querySelector('#planos-feedback').textContent.includes('atualizado com sucesso') && document.querySelector('#planos-panel').getAttribute('aria-busy') === 'false'`);
+  assert.match(await evaluate(`document.querySelector('#planos-rows').textContent`), /92\.233\.720\.368\.547\.758,07/);
+  assert.match(await evaluate(`document.querySelector('#planos-rows').textContent`), /9223372036854775807 dias/);
+  await click('#planos-rows button[aria-label^="Ativar plano"]');
+  await until(`!document.querySelector('#plano-status-submit').disabled`);
+  await click('#plano-status-submit');
+  await until(`!document.querySelector('.modal-backdrop') && document.querySelector('#planos-feedback').textContent.includes('ativado com sucesso') && document.querySelector('#planos-panel').getAttribute('aria-busy') === 'false'`);
+  for(const width of [1440,1024,768,375]){
+    await viewport(width); await delay(150);
+    assert.equal(await evaluate(`document.documentElement.scrollWidth <= innerWidth`),true,`Planos overflow at ${width}`);
+    assert.equal(await evaluate(`getComputedStyle(document.querySelector('#planos-rows td')).display`),width<576?'block':'table-cell');
+    await screenshot(`planos-${width}`);
+  }
+  await click('#planos-rows button[aria-label^="Editar plano"]');
+  await until(`document.activeElement.id === 'plano-edit-name'`);
+  await call('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
+  await call('Input.dispatchKeyEvent',{type:'keyUp',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
+  await until(`!document.querySelector('.modal-backdrop')`);
+  assert.match(await evaluate(`document.activeElement.getAttribute('aria-label')`),/^Editar plano/);
+  await evaluate(`window.fetch = window.th39OriginalFetch`);
+  console.log('TH-39 Chrome passed: navigation/title/focus, real create/edit/status, full description, XSS, exact int64, keyboard/Escape/focus return and stacked mobile at 375px.');
   assert.equal(requests.some((url) => /^https?:/.test(url) && !url.startsWith(base + '/')), false, 'External request');
   assert.deepEqual(errors, [], 'Browser runtime exceptions');
   assert.deepEqual(interceptionErrors, [], 'Interception failures');

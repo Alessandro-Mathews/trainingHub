@@ -195,6 +195,8 @@ async function pageModule(name, replaceAcademias = false) {
     text = text.replace("'./alunos.js'", JSON.stringify(alunosStub));
     const instrutoresStub = 'data:text/javascript,export function initInstrutores(){};export function visitInstrutores(){}';
     text = text.replace("'./instrutores.js'", JSON.stringify(instrutoresStub));
+    const planosStub = 'data:text/javascript,export function initPlanos(){};export function visitPlanos(){};export function leavePlanos(){}';
+    text = text.replace("'./planos.js'", JSON.stringify(planosStub));
   }
   return import('data:text/javascript;base64,' + Buffer.from(text).toString('base64') + '#' + pageSequence++);
 }
@@ -313,6 +315,7 @@ def run(browser):
     index.feed((ROOT / "public/index.html").read_text(encoding="utf-8"))
     assert index.elements["alunos"][0] == "section"
     assert "#alunos" in index.assets
+    assert index.elements["planos"][0] == "section" and "#planos" in index.assets
     serialized_bodies = check_api_javascript(env)
     encoded = subprocess.check_output(
         [str(ROOT / "build" / "security-tests" / "security_tests.exe"), "--fixture-hash"],
@@ -405,6 +408,7 @@ def run(browser):
                     ("/js/login.js", "application/javascript"),
                     ("/js/alunos.js", "application/javascript"),
                     ("/js/instrutores.js", "application/javascript"),
+                    ("/js/planos.js", "application/javascript"),
                     ("/vendor/bootstrap/bootstrap.min.css", "text/css"),
                     ("/vendor/bootstrap/bootstrap.bundle.min.js", "application/javascript"),
                     ("/images/traininghub-logo.png", "image/png"),

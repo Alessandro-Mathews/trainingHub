@@ -2,8 +2,9 @@ import { getJson, getAuthContext, logout } from './api.js';
 import { loadAcademias } from './academias.js';
 import { initAlunos, visitAlunos } from './alunos.js';
 import { initInstrutores, visitInstrutores } from './instrutores.js';
+import { initPlanos, visitPlanos, leavePlanos } from './planos.js';
 
-const pages = ['dashboard', 'academias', 'alunos', 'instrutores'];
+const pages = ['dashboard', 'academias', 'alunos', 'instrutores', 'planos'];
 let authContext = null;
 
 function navigate(moveFocus = true) {
@@ -16,7 +17,7 @@ function navigate(moveFocus = true) {
     if (active) link.setAttribute('aria-current', 'page');
     else link.removeAttribute('aria-current');
   }
-  const title = { dashboard: 'Dashboard', academias: 'Academias', alunos: 'Alunos', instrutores: 'Instrutores' }[page];
+  const title = { dashboard: 'Dashboard', academias: 'Academias', alunos: 'Alunos', instrutores: 'Instrutores', planos: 'Planos' }[page];
   document.getElementById('page-context').textContent = title;
   document.title = `${title} | TrainingHub`;
   const sidebar = document.getElementById('sidebar');
@@ -28,6 +29,10 @@ function navigate(moveFocus = true) {
   } else if (moveFocus) focusContent();
   if (page === 'alunos' && authContext) visitAlunos();
   if (page === 'instrutores' && authContext) visitInstrutores();
+  if (authContext) {
+    if (page === 'planos') visitPlanos();
+    else leavePlanos();
+  }
 }
 
 async function loadHealth(path, id, healthy, label) {
@@ -84,10 +89,12 @@ async function checkSession() {
     authContext = await getAuthContext();
     initAlunos(authContext);
     initInstrutores(authContext);
+    initPlanos(authContext);
     sessionState.hidden = true;
     authenticatedApp.hidden = false;
     if (location.hash === '#alunos') visitAlunos();
     if (location.hash === '#instrutores') visitInstrutores();
+    if (location.hash === '#planos') visitPlanos();
     loadAcademias();
     loadHealth('/api/health', 'system-status', (data) => data?.status === 'ok' && data.application === 'TrainingHub', 'Operacional');
     loadHealth('/api/health/database', 'database-status', (data) => data?.status === 'ok' && data.database === 'connected', 'Conectado');
