@@ -9,6 +9,12 @@
 
 namespace traininghub::repositories
 {
+struct MatriculaTemporal
+{
+    models::Matricula matricula;
+    std::string agoraUtc;
+};
+
 struct ContextoCriacaoMatricula
 {
     bool alunoExiste{};
@@ -24,9 +30,9 @@ struct ContextoCriacaoMatricula
 class MatriculaRepository
 {
 public:
-    using FindCallback = std::function<void(const std::optional<models::Matricula> &)>;
-    using ListCallback = std::function<void(const std::vector<models::Matricula> &)>;
-    using AlunoListCallback = std::function<void(const std::optional<std::vector<models::Matricula>> &)>;
+    using FindCallback = std::function<void(const std::optional<MatriculaTemporal> &)>;
+    using ListCallback = std::function<void(const std::vector<MatriculaTemporal> &)>;
+    using AlunoListCallback = std::function<void(const std::optional<std::vector<MatriculaTemporal>> &)>;
     using ContextCallback = std::function<void(const ContextoCriacaoMatricula &)>;
     using ErrorCallback = drogon::orm::ExceptionCallback;
 
@@ -37,6 +43,7 @@ public:
         const std::string &perfilNome, FindCallback callback, ErrorCallback errorCallback) const;
     void listarPorAcademia(std::int64_t academiaId, ListCallback callback, ErrorCallback errorCallback) const;
     void buscarPorId(std::int64_t academiaId, std::int64_t id, FindCallback callback, ErrorCallback errorCallback) const;
+    void cancelar(std::int64_t academiaId, std::int64_t id, FindCallback callback, ErrorCallback errorCallback) const;
     void listarPorAluno(std::int64_t academiaId, std::int64_t alunoId,
         AlunoListCallback callback, ErrorCallback errorCallback) const;
 

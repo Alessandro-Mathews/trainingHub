@@ -12,10 +12,13 @@ public:
     ADD_METHOD_TO(MatriculaController::listar, "/api/matriculas", drogon::Get, "traininghub::security::AuthenticationFilter");
     ADD_METHOD_TO(MatriculaController::buscarPorId, "/api/matriculas/{id}", drogon::Get, "traininghub::security::AuthenticationFilter");
     ADD_METHOD_TO(MatriculaController::listarPorAluno, "/api/alunos/{alunoId}/matriculas", drogon::Get, "traininghub::security::AuthenticationFilter");
+    ADD_METHOD_TO(MatriculaController::cancelar, "/api/matriculas/{id}/cancelamento", drogon::Put, "traininghub::security::AuthenticationFilter");
     METHOD_LIST_END
 
     void criar(const drogon::HttpRequestPtr &req,
         std::function<void(const drogon::HttpResponsePtr &)> &&callback);
+    void cancelar(const drogon::HttpRequestPtr &req,
+        std::function<void(const drogon::HttpResponsePtr &)> &&callback, const std::string &id);
     void listar(const drogon::HttpRequestPtr &req,
         std::function<void(const drogon::HttpResponsePtr &)> &&callback);
     void buscarPorId(const drogon::HttpRequestPtr &req,

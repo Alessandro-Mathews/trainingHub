@@ -63,14 +63,17 @@ services::MatriculaService::ErrorCallback onError(HttpCallback callback)
             callback(message(drogon::k400BadRequest, "Duracao do plano nao permite calcular vigencia valida.")); break;
         case MatriculaError::RelationshipConflict:
             callback(message(drogon::k409Conflict, "Relacionamento indisponivel para criar matricula.")); break;
+        case MatriculaError::LifecycleConflict:
+            callback(message(drogon::k409Conflict, "Matricula deve estar ativa para cancelamento.")); break;
         case MatriculaError::Internal:
             callback(message(drogon::k500InternalServerError, "Erro interno ao acessar matriculas.")); break;
         }
     };
 }
 
-Json::Value toJson(const models::Matricula &value)
+Json::Value toJson(const services::MatriculaComSituacao &result)
 {
+    const auto &value = result.matricula;
     Json::Value json;
     json["id"] = Json::Int64(value.id);
     json["academia_id"] = Json::Int64(value.academiaId);
@@ -82,6 +85,13 @@ Json::Value toJson(const models::Matricula &value)
     json["data_inicio"] = value.dataInicio;
     json["data_fim"] = value.dataFim;
     json["criado_em"] = value.criadoEm;
+    json["cancelado_em"] = value.canceladoEm ? Json::Value(*value.canceladoEm) : Json::Value(Json::nullValue);
+    switch (result.situacao)
+    {
+    case services::SituacaoMatricula::Ativa: json["situacao"] = "ATIVA"; break;
+    case services::SituacaoMatricula::Inativa: json["situacao"] = "INATIVA"; break;
+    case services::SituacaoMatricula::Cancelada: json["situacao"] = "CANCELADA"; break;
+    }
     return json;
 }
 
@@ -131,7 +141,7 @@ bool readContract(const drogon::HttpRequestPtr &req, const HttpCallback &callbac
 
 auto listResponse(HttpCallback callback)
 {
-    return [callback](const std::vector<models::Matricula> &values)
+    return [callback](const std::vector<services::MatriculaComSituacao> &values)
     {
         Json::Value json(Json::arrayValue);
         for (const auto &value : values) json.append(toJson(value));
@@ -151,7 +161,7 @@ void MatriculaController::criar(const drogon::HttpRequestPtr &req, HttpCallback 
     { callback(message(drogon::k400BadRequest, "Informe somente aluno_id e plano_id inteiros positivos em JSON, sem query.")); return; }
     service().criar(security::AuthorizationGuard::context(req),
         {(*json)["aluno_id"].asInt64(), (*json)["plano_id"].asInt64()},
-        [callback](const models::Matricula &value)
+        [callback](const services::MatriculaComSituacao &value)
         {
             auto response = drogon::HttpResponse::newHttpJsonResponse(toJson(value));
             response->setStatusCode(drogon::k201Created);
@@ -176,7 +186,21 @@ void MatriculaController::buscarPorId(const drogon::HttpRequestPtr &req, HttpCal
     const auto id = positiveId(textId);
     if (!id) { callback(message(drogon::k400BadRequest, "Informe id positivo de 64 bits.")); return; }
     service().buscarPorId(security::AuthorizationGuard::context(req), *id,
-        [callback](const models::Matricula &value) { callback(drogon::HttpResponse::newHttpJsonResponse(toJson(value))); }, onError(callback));
+        [callback](const services::MatriculaComSituacao &value) { callback(drogon::HttpResponse::newHttpJsonResponse(toJson(value))); }, onError(callback));
+}
+
+void MatriculaController::cancelar(const drogon::HttpRequestPtr &req, HttpCallback &&callback,
+    const std::string &textId)
+{
+    callback = noStore(std::move(callback));
+    if (!security::AuthorizationGuard::require(req, security::Operation::MatriculasManage, callback)) return;
+    if (!req->query().empty() || !req->body().empty())
+    { callback(message(drogon::k400BadRequest, "Cancelamento nao aceita query ou body.")); return; }
+    const auto id = positiveId(textId);
+    if (!id) { callback(message(drogon::k400BadRequest, "Informe id positivo de 64 bits.")); return; }
+    service().cancelar(security::AuthorizationGuard::context(req), *id,
+        [callback](const services::MatriculaComSituacao &value)
+        { callback(drogon::HttpResponse::newHttpJsonResponse(toJson(value))); }, onError(callback));
 }
 
 void MatriculaController::listarPorAluno(const drogon::HttpRequestPtr &req, HttpCallback &&callback,

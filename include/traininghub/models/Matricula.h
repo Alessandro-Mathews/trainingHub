@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 namespace traininghub::models
@@ -17,5 +18,6 @@ struct Matricula
     std::string dataInicio;
     std::string dataFim;
     std::string criadoEm;
+    std::optional<std::string> canceladoEm;
 };
 }
