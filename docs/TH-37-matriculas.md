@@ -216,9 +216,11 @@ os dados e a tabela nova; não há downgrade destrutivo automático.
 
 ## Limites e tarefas futuras
 
-Não existem PUT, PATCH, DELETE, status, cancelamento, renovação, trancamento,
-pagamento, inadimplência, carência ou transições de situação. TH-38 poderá definir
-regras adicionais, sem antecipação nesta entrega. TH-40 poderá consumir as quatro
+Na entrega original da TH-37 não existiam PUT, PATCH, DELETE, status, cancelamento,
+renovação, trancamento, pagamento, inadimplência, carência ou transições de situação.
+A TH-38 acrescenta situação derivada e cancelamento histórico por PUT, conforme
+`TH-38-regras-matricula.md`, preservando os contratos históricos descritos acima.
+TH-40 poderá consumir as quatro
 rotas administrativas; TH-41 tratará self-read do Aluno.
 
 Frontend e `api.js` permanecem inalterados. Futuras tarefas precisam tratar precisão

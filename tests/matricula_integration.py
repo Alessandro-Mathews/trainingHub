@@ -24,6 +24,9 @@ LARGE = 2**40
 MAXIMUM = 2**63 - 1
 FIELDS = ["id", "academia_id", "aluno_id", "plano_id", "nome_plano_contratado",
           "valor_contratado_centavos", "duracao_contratada_dias", "data_inicio", "data_fim", "criado_em"]
+PERSISTED_FIELDS = FIELDS + ["cancelado_em"]
+PUBLIC_FIELDS = PERSISTED_FIELDS + ["situacao"]
+REQUIRED_DATES = ["data_inicio", "data_fim", "criado_em"]
 VALID = {"aluno_id": 500, "plano_id": 600}
 
 
@@ -56,7 +59,7 @@ def run():
 
             with closing(sqlite3.connect(database)) as db:
                 for migration in sorted((ROOT / "migrations").glob("*.sql")):
-                    if migration.name != "007_matricula.sql":
+                    if migration.name < "007_matricula.sql":
                         db.executescript(migration.read_text(encoding="utf-8"))
                 db.execute("UPDATE perfil SET id=id+?", (LARGE,))
                 db.execute("INSERT INTO perfil(nome) VALUES('TH37 desconhecido')")
@@ -77,7 +80,26 @@ def run():
                 previous = {table: db.execute(f"SELECT * FROM {table}").fetchall() for table in tables}
                 db.executescript((ROOT / "migrations/007_matricula.sql").read_text(encoding="utf-8"))
                 assert previous == {table: db.execute(f"SELECT * FROM {table}").fetchall() for table in tables}
-            assert [column[1] for column in sql("PRAGMA table_info(matricula)")] == FIELDS
+                assert [column[1] for column in db.execute("PRAGMA table_info(matricula)")] == FIELDS
+                # An existing TH-37 row must survive the additive lifecycle migration unchanged.
+                db.execute("INSERT INTO matricula(academia_id,aluno_id,plano_id,nome_plano_contratado,"
+                           "valor_contratado_centavos,duracao_contratada_dias,data_inicio,data_fim) "
+                           "VALUES(1,500,600,'Legado',0,1,'2020-01-01 00:00:00','2020-01-02 00:00:00')")
+                legacy = db.execute("SELECT * FROM matricula").fetchall()
+                db.commit()
+                for migration in sorted((ROOT / "migrations").glob("*.sql")):
+                    if migration.name > "007_matricula.sql":
+                        db.executescript(migration.read_text(encoding="utf-8"))
+                assert db.execute("SELECT " + ",".join(FIELDS) + " FROM matricula").fetchall() == legacy
+                assert db.execute("SELECT cancelado_em FROM matricula").fetchall() == [(None,)]
+                assert previous == {table: db.execute(f"SELECT * FROM {table}").fetchall() for table in tables}
+                # Remove only the migration probe so original empty-history checks remain intact.
+                db.execute("DELETE FROM matricula")
+                db.commit()
+            columns = sql("PRAGMA table_info(matricula)")
+            assert [column[1] for column in columns] == PERSISTED_FIELDS
+            assert columns[-1][2:5] == ("DATETIME", 0, None)
+            assert not sql("SELECT name FROM sqlite_master WHERE type='trigger'")
             assert {(row[2], row[3], row[5], row[6]) for row in sql("PRAGMA foreign_key_list(matricula)")} == {
                 ("academia", "academia_id", "RESTRICT", "RESTRICT"),
                 ("aluno", "aluno_id", "RESTRICT", "RESTRICT"), ("plano", "plano_id", "RESTRICT", "RESTRICT")}
@@ -109,7 +131,7 @@ def run():
                 previous = snapshot() if expected >= 400 else None
                 data = body if isinstance(body, bytes) else json.dumps(body).encode() if body is not None else None
                 req = urllib.request.Request(base + path, method=method, data=data,
-                                             headers={"Content-Type": content_type})
+                                             headers={"Content-Type": content_type} if content_type else {})
                 try:
                     response = (client or admin).open(req, timeout=20)
                 except urllib.error.HTTPError as error:
@@ -138,14 +160,20 @@ def run():
                 return client
 
             def persisted(value):
-                assert set(value) == set(FIELDS)
+                assert set(value) == set(PUBLIC_FIELDS)
                 assert all(type(value[key]) is int for key in FIELDS[:4] + FIELDS[5:7])
                 assert all(value[key] > 0 for key in FIELDS[:4])
                 assert value["valor_contratado_centavos"] >= 0
-                start, end, created = [datetime.strptime(value[key], "%Y-%m-%d %H:%M:%S") for key in FIELDS[7:]]
+                start, end, created = [datetime.strptime(value[key], "%Y-%m-%d %H:%M:%S") for key in REQUIRED_DATES]
                 assert end - start == timedelta(days=value["duracao_contratada_dias"])
                 assert created == start and end > start
-                assert sql("SELECT " + ",".join(FIELDS) + " FROM matricula WHERE id=?", (value["id"],)) == [tuple(value[key] for key in FIELDS)]
+                if value["cancelado_em"] is not None:
+                    cancelled = datetime.strptime(value["cancelado_em"], "%Y-%m-%d %H:%M:%S")
+                    assert start <= cancelled < end
+                    assert value["situacao"] == "CANCELADA"
+                else:
+                    assert value["situacao"] in ("ATIVA", "INATIVA")
+                assert sql("SELECT " + ",".join(PERSISTED_FIELDS) + " FROM matricula WHERE id=?", (value["id"],)) == [tuple(value[key] for key in PERSISTED_FIELDS)]
 
             def create(body=None, client=None, tenant=1):
                 body = VALID if body is None else body
@@ -154,6 +182,7 @@ def run():
                 value = request("POST", "/api/matriculas", body, 201, client)
                 end = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
                 persisted(value)
+                assert value["situacao"] == "ATIVA" and value["cancelado_em"] is None
                 assert start <= datetime.strptime(value["data_inicio"], "%Y-%m-%d %H:%M:%S") <= end
                 assert value["academia_id"] == tenant and value["aluno_id"] == body["aluno_id"] and value["plano_id"] == body["plano_id"]
                 assert tuple(value[key] for key in FIELDS[4:7]) == plan
@@ -211,12 +240,15 @@ def run():
 
                     routes = [("POST", "/api/matriculas", VALID), ("GET", "/api/matriculas", None),
                               ("GET", f'/api/matriculas/{own["id"]}', None), ("GET", "/api/alunos/503/matriculas", None)]
+                    cancellation_path = f'/api/matriculas/{own["id"]}/cancelamento'
                     forged = urllib.request.build_opener()
                     forged.addheaders = [("Cookie", "JSESSIONID=TH37-forged-session")]
                     for client, expected in ((instructor, 403), (aluno, 403), (unknown, 403), (anonymous, 401), (forged, 401)):
                         for method, path, body in routes:
                             request(method, path, body, expected, client)
                             request(method, path + "?academia_id=2", b"{invalid", expected, client)
+                        request("PUT", cancellation_path, expected=expected, client=client)
+                        request("PUT", cancellation_path + "?academia_id=2", b"{invalid", expected, client)
 
                     for field in ("aluno_id", "plano_id"):
                         request("POST", "/api/matriculas", {key: value for key, value in VALID.items() if key != field}, 400)
@@ -227,7 +259,7 @@ def run():
                                  b'{"aluno_id":500,"plano_id":600} false', b'{"aluno_id":500,"aluno_id":501,"plano_id":600}'):
                         request("POST", "/api/matriculas", body, 400)
                     for field in ("academia_id", "academiaId", "nome_plano_contratado", "valor_contratado_centavos",
-                                  "duracao_contratada_dias", "data_inicio", "data_fim", "criado_em", "situacao", "ativo", "id", "extra"):
+                                  "duracao_contratada_dias", "data_inicio", "data_fim", "criado_em", "cancelado_em", "situacao", "ativo", "id", "extra"):
                         request("POST", "/api/matriculas", VALID | {field: 1}, 400)
                     for content_type in ("text/plain", "application/x-www-form-urlencoded", "application/xml"):
                         request("POST", "/api/matriculas", VALID, 400, content_type=content_type)
@@ -326,6 +358,93 @@ def run():
                         rejected_sql(f"UPDATE {table} SET id=900000 WHERE id=?", (identity,))
                     assert sql("PRAGMA foreign_key_check") == []
 
+                    # Lifecycle fixtures use controlled SQLite dates, never expiration sleeps.
+                    def lifecycle_fixture(start, end, cancelled=None):
+                        identity = sql("INSERT INTO matricula(academia_id,aluno_id,plano_id,nome_plano_contratado,"
+                            "valor_contratado_centavos,duracao_contratada_dias,data_inicio,data_fim,criado_em,cancelado_em) "
+                            "VALUES(1,500,600,'Historico controlado',0,1,?,?,?,?) RETURNING id",
+                            (start, end, start, cancelled))
+                        return request("GET", f'/api/matriculas/{identity[0][0]}')
+
+                    # Nullable canonical timestamps and both inclusive/exclusive cancellation bounds.
+                    for invalid in ("", "invalid", "2026-01-15T00:00:00", "2026-01-15 00:00:00Z",
+                                    "2026-01-15 00:00:00.000", "2026-01-15 25:00:00",
+                                    "2025-12-31 23:59:59", "2026-01-31 00:00:00", "2026-02-01 00:00:00"):
+                        rejected_sql("INSERT INTO matricula(" + ",".join(FIELDS[1:9]) + ",cancelado_em) VALUES(?,?,?,?,?,?,?,?,?)",
+                                     baseline + [invalid])
+
+                    expired_start, expired_end, future_start, future_end = sql(
+                        "SELECT datetime('now','-2 days'),datetime('now','-1 day'),"
+                        "datetime('now','+1 day'),datetime('now','+2 days')")[0]
+                    expired = lifecycle_fixture(expired_start, expired_end)
+                    future = lifecycle_fixture(future_start, future_end)
+                    cancelled_past = lifecycle_fixture(expired_start, expired_end, expired_start)
+                    for value in (expired, future):
+                        assert value["situacao"] == "INATIVA" and value["cancelado_em"] is None
+                        historical(value)
+                        request("PUT", f'/api/matriculas/{value["id"]}/cancelamento', expected=409)
+                    assert cancelled_past["situacao"] == "CANCELADA"
+                    historical(cancelled_past)
+                    request("PUT", f'/api/matriculas/{cancelled_past["id"]}/cancelamento', expected=409)
+
+                    for client, external in ((admin, foreign), (admin_b, first)):
+                        missing = request("PUT", "/api/matriculas/9999/cancelamento", expected=404, client=client)
+                        assert request("PUT", f'/api/matriculas/{external["id"]}/cancelamento',
+                                       expected=404, client=client) == missing
+                    for identity in ("0", "-1", "1.0", "abc", "1x", "%2B1", "%201", str(2**63), str(2**64)):
+                        request("PUT", f"/api/matriculas/{identity}/cancelamento", expected=400)
+                    for body in ({}, [], None, True, 1, "invalid", b" ", b"{", {"cancelado_em": expired_start},
+                                 {"situacao": "CANCELADA"}, {"academia_id": 2}, {"data_fim": expired_end}):
+                        # None normally means no body in request(); send literal JSON null here.
+                        request("PUT", cancellation_path, b"null" if body is None else body, 400)
+                    request("PUT", cancellation_path + "?academia_id=1", expected=400)
+
+                    for client, tenant, body in ((admin, 1, VALID), (gestor, 1, VALID),
+                                                 (gestor_b, 2, {"aluno_id": 700, "plano_id": 800})):
+                        original = create(body, client, tenant)
+                        path = f'/api/matriculas/{original["id"]}/cancelamento'
+                        before_cancel = sql("SELECT CURRENT_TIMESTAMP")[0][0]
+                        cancelled = request("PUT", path, client=client, content_type=None)
+                        after_cancel = sql("SELECT CURRENT_TIMESTAMP")[0][0]
+                        assert cancelled["situacao"] == "CANCELADA"
+                        assert before_cancel <= cancelled["cancelado_em"] <= after_cancel
+                        assert {key: cancelled[key] for key in FIELDS} == {key: original[key] for key in FIELDS}
+                        historical(cancelled, client)
+                        request("PUT", path, expected=409, client=client)
+                        historical(cancelled, client)
+                        # Earlier cancelled contracts do not block a new independent contract.
+                        create(body, client, tenant)
+
+                    concurrent_original = create()
+                    concurrent_path = f'/api/matriculas/{concurrent_original["id"]}/cancelamento'
+                    barrier = threading.Barrier(2)
+
+                    def concurrent_cancel(client):
+                        barrier.wait(timeout=10)
+                        req = urllib.request.Request(base + concurrent_path, method="PUT")
+                        try:
+                            response = client.open(req, timeout=20)
+                        except urllib.error.HTTPError as error:
+                            response = error
+                        with response:
+                            content = response.read()
+                            safe(content, response.code >= 400)
+                            assert response.headers.get("Cache-Control") == "no-store"
+                            return response.code, json.loads(content)
+
+                    previous_count = len(snapshot())
+                    with ThreadPoolExecutor(max_workers=2) as pool:
+                        results = list(pool.map(concurrent_cancel, (admin, gestor)))
+                    assert sorted(status for status, _ in results) == [200, 409]
+                    checked += len(results)
+                    winner = next(value for status, value in results if status == 200)
+                    assert len(snapshot()) == previous_count
+                    assert {key: winner[key] for key in FIELDS} == {key: concurrent_original[key] for key in FIELDS}
+                    historical(winner)
+                    request("PUT", concurrent_path, expected=409)
+                    historical(winner)
+                    assert sql("PRAGMA foreign_key_check") == []
+
                     # Independent fixtures prove full int64 without exhausting IDs prematurely.
                     sql("INSERT INTO plano(id,academia_id,nome,valor_centavos,duracao_dias) VALUES(?,?,'Int64',?,1)", (MAXIMUM, LARGE, MAXIMUM))
                     maximum = create({"aluno_id": MAXIMUM, "plano_id": MAXIMUM}, admin_large, LARGE)
@@ -340,6 +459,7 @@ def run():
                     try:
                         for method, path, body in routes:
                             request(method, path, body, 500)
+                        request("PUT", cancellation_path, expected=500)
                     finally:
                         sql("ALTER TABLE matricula_unavailable RENAME TO matricula")
                     assert snapshot() == previous
@@ -360,7 +480,7 @@ def run():
     finally:
         after = hashlib.sha256(development.read_bytes()).digest() if development.exists() else None
         assert before == after, "Development database changed"
-    print(f"TH-37 passed: {checked} HTTP checks; immutable snapshot, UTC validity, int64, repeated contracts, "
+    print(f"TH-37/TH-38 passed: {checked} HTTP checks; immutable snapshot, UTC validity, int64, repeated contracts, "
           "four-route role matrix, bidirectional tenant isolation, historical reads, FK/CHECK/RESTRICT, "
           "safe 400/401/403/404/409/500 and isolated SQLite. Development DB unchanged. "
           "Eligibility race window not forced: no deterministic production synchronization hook.")

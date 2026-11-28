@@ -35,3 +35,14 @@ target_link_libraries(authorization_tests PRIVATE Drogon::Drogon)
 add_test(NAME authorization COMMAND authorization_tests)
 add_test(NAME security COMMAND security_tests)
 add_test(NAME sqlite_foreign_keys COMMAND sqlite_foreign_keys_tests)
+
+add_executable(matricula_ciclo_vida_tests
+    matricula_ciclo_vida_tests.cpp
+    ../src/services/MatriculaService.cpp
+    ../src/repositories/MatriculaRepository.cpp
+    ../src/security/AuthorizationService.cpp
+    ../src/repositories/AuthContextRepository.cpp
+)
+target_include_directories(matricula_ciclo_vida_tests PRIVATE ../include)
+target_link_libraries(matricula_ciclo_vida_tests PRIVATE Drogon::Drogon)
+add_test(NAME matricula_ciclo_vida COMMAND matricula_ciclo_vida_tests)

@@ -7,6 +7,22 @@ namespace traininghub::services
 {
 namespace
 {
+MatriculaComSituacao classificar(const repositories::MatriculaTemporal &value)
+{
+    return {value.matricula, MatriculaService::determinarSituacao(value.matricula, value.agoraUtc)};
+}
+
+auto classificarLista(MatriculaService::ListCallback callback)
+{
+    return [callback = std::move(callback)](const std::vector<repositories::MatriculaTemporal> &values)
+    {
+        std::vector<MatriculaComSituacao> classified;
+        classified.reserve(values.size());
+        for (const auto &value : values) classified.push_back(classificar(value));
+        callback(classified);
+    };
+}
+
 bool authorize(const security::ValidatedAuthContext &actor, security::Operation operation,
     const MatriculaService::ErrorCallback &errorCallback)
 {
@@ -32,6 +48,36 @@ repositories::MatriculaRepository::ErrorCallback databaseError(MatriculaService:
 MatriculaService::MatriculaService(repositories::MatriculaRepository repository)
     : repository_(std::move(repository)) {}
 
+SituacaoMatricula MatriculaService::determinarSituacao(const models::Matricula &matricula,
+    const std::string &agoraUtc)
+{
+    if (matricula.canceladoEm) return SituacaoMatricula::Cancelada;
+    if (matricula.dataInicio <= agoraUtc && agoraUtc < matricula.dataFim) return SituacaoMatricula::Ativa;
+    return SituacaoMatricula::Inativa;
+}
+
+void MatriculaService::cancelar(const security::ValidatedAuthContext &actor, std::int64_t id,
+    FindCallback callback, ErrorCallback errorCallback) const
+{
+    if (!authorize(actor, security::Operation::MatriculasManage, errorCallback)) return;
+    if (id <= 0) { errorCallback(MatriculaError::InvalidInput); return; }
+    const auto academiaId = actor.identity.academiaId;
+    repository_.buscarPorId(academiaId, id,
+        [repository = repository_, academiaId, id, callback, errorCallback]
+        (const std::optional<repositories::MatriculaTemporal> &value)
+        {
+            if (!value) { errorCallback(MatriculaError::NotFound); return; }
+            if (determinarSituacao(value->matricula, value->agoraUtc) != SituacaoMatricula::Ativa)
+            { errorCallback(MatriculaError::LifecycleConflict); return; }
+            repository.cancelar(academiaId, id,
+                [callback, errorCallback](const std::optional<repositories::MatriculaTemporal> &updated)
+                {
+                    if (updated) callback(classificar(*updated));
+                    else errorCallback(MatriculaError::LifecycleConflict);
+                }, databaseError(errorCallback));
+        }, databaseError(errorCallback));
+}
+
 void MatriculaService::criar(const security::ValidatedAuthContext &actor, const NovaMatricula &input,
     FindCallback callback, ErrorCallback errorCallback) const
 {
@@ -51,9 +97,9 @@ void MatriculaService::criar(const security::ValidatedAuthContext &actor, const 
             if (!context.planoAtivo) { errorCallback(MatriculaError::InactivePlano); return; }
             if (!context.vigenciaValida) { errorCallback(MatriculaError::InvalidValidity); return; }
             repository.criar(academiaId, input.alunoId, input.planoId, *context.perfilNome,
-                [callback, errorCallback](const std::optional<models::Matricula> &value)
+                [callback, errorCallback](const std::optional<repositories::MatriculaTemporal> &value)
                 {
-                    if (value) callback(*value);
+                    if (value) callback(classificar(*value));
                     else errorCallback(MatriculaError::RelationshipConflict);
                 }, databaseError(errorCallback));
         }, databaseError(errorCallback));
@@ -63,7 +109,7 @@ void MatriculaService::listarPorAcademia(const security::ValidatedAuthContext &a
     ListCallback callback, ErrorCallback errorCallback) const
 {
     if (!authorize(actor, security::Operation::MatriculasRead, errorCallback)) return;
-    repository_.listarPorAcademia(actor.identity.academiaId, std::move(callback), databaseError(errorCallback));
+    repository_.listarPorAcademia(actor.identity.academiaId, classificarLista(std::move(callback)), databaseError(errorCallback));
 }
 
 void MatriculaService::buscarPorId(const security::ValidatedAuthContext &actor, std::int64_t id,
@@ -72,9 +118,9 @@ void MatriculaService::buscarPorId(const security::ValidatedAuthContext &actor, 
     if (!authorize(actor, security::Operation::MatriculasRead, errorCallback)) return;
     if (id <= 0) { errorCallback(MatriculaError::InvalidInput); return; }
     repository_.buscarPorId(actor.identity.academiaId, id,
-        [callback, errorCallback](const std::optional<models::Matricula> &value)
+        [callback, errorCallback](const std::optional<repositories::MatriculaTemporal> &value)
         {
-            if (value) callback(*value);
+            if (value) callback(classificar(*value));
             else errorCallback(MatriculaError::NotFound);
         }, databaseError(errorCallback));
 }
@@ -85,9 +131,9 @@ void MatriculaService::listarPorAluno(const security::ValidatedAuthContext &acto
     if (!authorize(actor, security::Operation::MatriculasRead, errorCallback)) return;
     if (alunoId <= 0) { errorCallback(MatriculaError::InvalidInput); return; }
     repository_.listarPorAluno(actor.identity.academiaId, alunoId,
-        [callback, errorCallback](const std::optional<std::vector<models::Matricula>> &values)
+        [callback, errorCallback](const std::optional<std::vector<repositories::MatriculaTemporal>> &values)
         {
-            if (values) callback(*values);
+            if (values) classificarLista(callback)(*values);
             else errorCallback(MatriculaError::AlunoNotFound);
         }, databaseError(errorCallback));
 }
